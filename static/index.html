@@ -14,7 +14,7 @@
   </script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐳</text></svg>">
   <link rel="stylesheet" href="/static/vendor/xterm.css">
-  <link rel="stylesheet" href="/static/style.css?v=2">
+  <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
   <header class="topbar">
@@ -41,20 +41,22 @@
           <button type="button" class="btn" data-action="update_all" data-confirm="¿Actualizar TODOS los servicios (pull + despliegue)?">⬇️ Actualizar todos</button>
           <label class="check"><input type="checkbox" id="chkForce"> Forzar recreación</label>
         </div>
-        <div class="group" role="group" aria-label="Control de todos los servicios">
-          <span class="group-title">⏯️ Todos</span>
-          <button type="button" class="btn" data-action="start" data-all>▶ Iniciar</button>
-          <button type="button" class="btn" data-action="restart" data-all data-confirm="¿Reiniciar TODOS los servicios?">🔄 Reiniciar</button>
-          <button type="button" class="btn" data-action="recreate" data-all data-confirm="¿Recrear TODOS los servicios (en local, sin descargar)?">🔨 Recrear</button>
-          <button type="button" class="btn btn-danger" data-action="stop" data-all data-confirm="¿Detener TODOS los servicios? Esto incluye este panel si está gestionado por update.sh.">⏹ Detener</button>
-          <button type="button" class="btn" data-policy-all>🔁 Política</button>
+        <div class="group" role="group" aria-label="Acciones en lote">
+          <span class="group-title" id="batchTitle">⏯️ Todos</span>
+          <button type="button" class="btn" id="btnSelectAll">☑️ Seleccionar todos</button>
+          <button type="button" class="btn" data-batch="start">▶ Iniciar</button>
+          <button type="button" class="btn" data-batch="restart">🔄 Reiniciar</button>
+          <button type="button" class="btn" data-batch="recreate">🔨 Recrear</button>
+          <button type="button" class="btn btn-danger" data-batch="stop">⏹ Detener</button>
+          <button type="button" class="btn" data-batch="update">⬇️ Actualizar</button>
+          <button type="button" class="btn" data-batch="backup">💾 Backup</button>
+          <button type="button" class="btn" data-batch="policy">🔁 Política</button>
         </div>
         <div class="group" role="group" aria-label="Diagnóstico y administración">
           <span class="group-title">🛠️ Herramientas</span>
           <button type="button" class="btn" data-action="stats">📈 Recursos</button>
           <button type="button" class="btn" data-action="show">📜 Comandos</button>
           <button type="button" class="btn" id="btnNew">✨ Nuevo servicio</button>
-          <button type="button" class="btn" data-action="backup" data-all>💾 Backup de todos</button>
           <button type="button" class="btn" data-action="restore">⏪ Restaurar</button>
           <button type="button" class="btn" data-action="clean">🧹 Limpieza</button>
           <button type="button" class="btn" id="btnUserHome">⚙️ Ruta base</button>
@@ -73,9 +75,9 @@
       <div class="table-wrap">
         <table class="services">
           <thead>
-            <tr><th>Servicio</th><th>Modo</th><th>Puerto</th><th>Estado</th><th class="actions-col">Acciones</th></tr>
+            <tr><th class="sel-col"><input type="checkbox" id="chkAll" aria-label="Seleccionar todos los servicios visibles"></th><th>Servicio</th><th>Modo</th><th>Puerto</th><th>Estado</th><th class="actions-col">Acciones</th></tr>
           </thead>
-          <tbody id="svcBody"><tr><td colspan="5" class="muted">Cargando…</td></tr></tbody>
+          <tbody id="svcBody"><tr><td colspan="6" class="muted">Cargando…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -122,6 +124,6 @@
 
   <script src="/static/vendor/xterm.js"></script>
   <script src="/static/vendor/addon-fit.js"></script>
-  <script src="/static/app.js?v=1"></script>
+  <script src="/static/app.js?v=2"></script>
 </body>
 </html>

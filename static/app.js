@@ -7,6 +7,7 @@
     services: [],
     info: {},
     checkRunning: false,
+    selected: new Set(), // carpetas marcadas para acciones en lote
     terms: new Map(), // id → { term, fit, ws, pane, tab, info, closed }
     active: null,
   };
@@ -78,11 +79,13 @@
     try {
       const data = await api("/api/services");
       state.services = data.services;
+      const existing = new Set(data.services.map((s) => s.folder));
+      for (const f of [...state.selected]) if (!existing.has(f)) state.selected.delete(f);
       state.checkRunning = data.check_running;
       renderServices();
       renderCheckInfo(data.check_time);
     } catch (e) {
-      $("#svcBody").innerHTML = `<tr><td colspan="5" class="muted">⚠️ ${esc(e.message)}</td></tr>`;
+      $("#svcBody").innerHTML = `<tr><td colspan="6" class="muted">⚠️ ${esc(e.message)}</td></tr>`;
     }
   }
 
@@ -102,8 +105,11 @@
     $("#updCount").textContent = updatable.length;
     $("#btnUpdateAvailable").disabled = updatable.length === 0;
 
+    state.visible = list.map((s) => s.folder);
+    updateSelectionUI();
+
     if (!list.length) {
-      $("#svcBody").innerHTML = `<tr><td colspan="5" class="muted">${state.services.length ? "Ningún servicio coincide con el filtro." : "No hay servicios configurados."}</td></tr>`;
+      $("#svcBody").innerHTML = `<tr><td colspan="6" class="muted">${state.services.length ? "Ningún servicio coincide con el filtro." : "No hay servicios configurados."}</td></tr>`;
       return;
     }
 
@@ -118,7 +124,9 @@
       const toggle = s.status === "RUNNING"
         ? `<button type="button" class="btn btn-sm btn-danger keep" data-svc-action="stop" title="Detener">⏹</button>`
         : `<button type="button" class="btn btn-sm keep" data-svc-action="start" title="Iniciar">▶</button>`;
-      return `<tr data-folder="${esc(s.folder)}">
+      const sel = state.selected.has(s.folder);
+      return `<tr data-folder="${esc(s.folder)}"${sel ? ' class="selected"' : ""}>
+        <td class="sel"><input type="checkbox" class="sel-chk" aria-label="Seleccionar ${esc(s.name)}"${sel ? " checked" : ""}></td>
         <td><span class="svc-name">${esc(s.name)}</span><span class="svc-badges">${badges.join("")}</span><br>
             <span class="svc-folder" title="${esc(s.image)}">${esc(s.folder)}${s.image ? " · " + esc(s.image) : ""}</span></td>
         <td><span class="muted">${esc(s.mode)}</span></td>
@@ -185,6 +193,88 @@
     runAction({ action: "update_list", services: list.map((s) => s.folder) });
   });
 
+  // ── Selección y acciones en lote ───────────────────────────
+  function selectedServices() {
+    return state.services.filter((s) => state.selected.has(s.folder));
+  }
+
+  function updateSelectionUI() {
+    const n = state.selected.size;
+    const title = $("#batchTitle");
+    title.textContent = n ? `☑️ Selección (${n})` : "⏯️ Todos";
+    title.classList.toggle("has-sel", n > 0);
+    const visible = state.visible || [];
+    const visSel = visible.filter((f) => state.selected.has(f)).length;
+    const chkAll = $("#chkAll");
+    chkAll.checked = visible.length > 0 && visSel === visible.length;
+    chkAll.indeterminate = visSel > 0 && visSel < visible.length;
+    $("#btnSelectAll").textContent = n ? "✖ Quitar selección" : "☑️ Seleccionar todos";
+    document.querySelectorAll("[data-batch]").forEach((b) => {
+      b.title = n ? `Aplicar a los ${n} servicio(s) seleccionados` : "Aplicar a TODOS los servicios";
+    });
+  }
+
+  function setSelected(folder, on) {
+    if (on) state.selected.add(folder);
+    else state.selected.delete(folder);
+    const row = document.querySelector(`#svcBody tr[data-folder="${CSS.escape(folder)}"]`);
+    if (row) {
+      row.classList.toggle("selected", on);
+      const chk = $(".sel-chk", row);
+      if (chk) chk.checked = on;
+    }
+  }
+
+  $("#svcBody").addEventListener("change", (ev) => {
+    if (!ev.target.classList.contains("sel-chk")) return;
+    setSelected(ev.target.closest("tr").dataset.folder, ev.target.checked);
+    updateSelectionUI();
+  });
+
+  // Casilla de la cabecera: marca o desmarca los servicios visibles (respeta el filtro)
+  $("#chkAll").addEventListener("change", (ev) => {
+    for (const f of state.visible || []) setSelected(f, ev.target.checked);
+    updateSelectionUI();
+  });
+
+  $("#btnSelectAll").addEventListener("click", () => {
+    if (state.selected.size) for (const f of [...state.selected]) setSelected(f, false);
+    else for (const f of state.visible || []) setSelected(f, true);
+    updateSelectionUI();
+  });
+
+  document.querySelectorAll("[data-batch]").forEach((btn) => btn.addEventListener("click", () => batchAction(btn.dataset.batch)));
+
+  function batchAction(op) {
+    const sel = selectedServices();
+    const force = $("#chkForce").checked;
+    const verbs = {
+      start: "Iniciar", stop: "Detener", restart: "Reiniciar", recreate: "Recrear (en local, sin descargar)",
+      update: "Actualizar" + (force ? " forzando recreación" : ""), backup: "Hacer backup de", policy: "Cambiar la política de",
+    };
+
+    if (!sel.length) {
+      // Sin selección: TODOS, con las opciones globales de update.sh (-a, --start all…)
+      const selfNote = op === "stop" ? " Esto incluye este panel si está gestionado por update.sh." : "";
+      if (op === "policy") return askPolicy("todos los servicios", (policy) => runAction({ action: "policy", service: "all", policy }));
+      if (op !== "start" && op !== "backup" && !confirm(`¿${verbs[op]} TODOS los servicios?${selfNote}`)) return;
+      if (op === "update") return runAction({ action: "update_all", force });
+      return runAction({ action: op, service: "all" });
+    }
+
+    const names = sel.map((s) => s.name).join(", ");
+    const self = sel.find((s) => s.is_self);
+    let selfNote = "";
+    if (self && op === "stop") selfNote = `\n\nIncluye este panel: dejará de estar accesible hasta que lo arranques por SSH (./update.sh --start ${self.folder}).`;
+    else if (self && op !== "backup") selfNote = "\n\nIncluye este panel: se reiniciará y la tarea seguirá en segundo plano.";
+    const body = { action: "batch", op, services: sel.map((s) => s.folder), force: op === "update" && force };
+    if (op === "policy") {
+      return askPolicy(`${sel.length} servicio(s)`, (policy) => runAction({ ...body, policy }));
+    }
+    if (op !== "start" && !confirm(`¿${verbs[op]} ${sel.length} servicio(s)?\n${names}${selfNote}`)) return;
+    runAction(body);
+  }
+
   // Acciones por fila
   $("#svcBody").addEventListener("click", (ev) => {
     const moreBtn = ev.target.closest("[data-more]");
@@ -197,7 +287,15 @@
       return;
     }
     const btn = ev.target.closest("[data-svc-action]");
-    if (!btn) return;
+    if (!btn) {
+      // Clic en la fila (fuera de botones, enlaces y casilla) = marcar/desmarcar
+      const row = ev.target.closest("tr[data-folder]");
+      if (row && !ev.target.closest("a, input, button, .more")) {
+        setSelected(row.dataset.folder, !state.selected.has(row.dataset.folder));
+        updateSelectionUI();
+      }
+      return;
+    }
     closeMenus();
     const folder = btn.closest("tr").dataset.folder;
     const svc = state.services.find((s) => s.folder === folder);
@@ -219,7 +317,7 @@
       if (!confirm(`¿Detener ${svc.name}? Es este panel: dejará de estar accesible hasta que lo arranques por SSH (./update.sh --start ${svc.folder}).`)) return;
     } else if (ask && !confirm(ask + selfNote)) return;
 
-    if (act === "policy") return askPolicy(svc.folder, svc.name);
+    if (act === "policy") return askPolicy(svc.name, (policy) => runAction({ action: "policy", service: svc.folder, policy }));
     if (act === "update_force") return runAction({ action: "update", service: svc.folder, force: true });
     runAction({ action: act, service: svc.folder });
   }
@@ -236,18 +334,15 @@
   });
 
   // Política de reinicio
-  function askPolicy(target, label) {
+  function askPolicy(label, onPick) {
     const dlg = $("#dlgPolicy");
-    $("#policyTarget").textContent = target === "all" ? "· todos los servicios" : `· ${label}`;
+    $("#policyTarget").textContent = `· ${label}`;
     dlg.returnValue = "";
     dlg.onclose = () => {
-      if (dlg.returnValue !== "ok") return;
-      const policy = $("input[name=policy]:checked", dlg).value;
-      runAction({ action: "policy", service: target, policy });
+      if (dlg.returnValue === "ok") onPick($("input[name=policy]:checked", dlg).value);
     };
     dlg.showModal();
   }
-  $("[data-policy-all]").addEventListener("click", () => askPolicy("all", "todos"));
 
   // Nuevo servicio
   $("#btnNew").addEventListener("click", () => {

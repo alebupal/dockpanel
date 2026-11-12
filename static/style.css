@@ -199,6 +199,10 @@ table.services { width: 100%; border-collapse: collapse; }
 }
 .services td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .services tr:hover td { background: var(--hover); }
+.services tr.selected td { background: var(--info-bg); }
+.sel-col, td.sel { width: 32px; padding-right: 0 !important; }
+.services input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); vertical-align: middle; }
+.group-title.has-sel { color: var(--info-fg); }
 .svc-name { font-weight: 600; color: var(--heading); }
 .svc-folder { color: var(--muted); font-size: 12px; }
 .svc-badges { display: inline-flex; gap: 4px; margin-left: 4px; vertical-align: middle; }
@@ -380,8 +384,8 @@ dialog textarea {
   .layout { padding: 12px 16px; gap: 12px; }
   .group-title { width: 100%; }
   #filter { width: 130px; }
-  .services th:nth-child(2), .services td:nth-child(2),
-  .services th:nth-child(3), .services td:nth-child(3) { display: none; }
+  .services th:nth-child(3), .services td:nth-child(3),
+  .services th:nth-child(4), .services td:nth-child(4) { display: none; }
   .services td { padding: 7px 4px; }
   .svc-folder { word-break: break-all; }
   td.actions .btn:not(.keep) { display: none; }

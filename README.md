@@ -20,7 +20,7 @@ Panel web sencillo para gestionar los servicios de `docker/` con el **mismo `upd
 | 🚀 Actualizaciones | Comprobar (marca los servicios con imagen nueva) | `--check-tsv` (= `-c`) |
 | | Actualizar disponibles | `u` tras `c` en el menú (cada uno con `-f` y `image prune` al final) |
 | | Actualizar todos (opción forzar) | `-a [-f]` |
-| ⏯️ Todos | Iniciar, reiniciar, recrear, detener, política | `--start all`, … `--restart-policy all <pol>` |
+| ⏯️ Lote | Casillas por servicio (o clic en la fila), «Seleccionar todos» y casilla de cabecera (respeta el filtro). Iniciar, reiniciar, recrear, detener, actualizar, backup y política **sobre los seleccionados**; sin selección, sobre todos | por servicio: `update.sh --start <svc>`…; sin selección: `--start all`, `-a [-f]`, `-k all`… |
 | 🛠️ Herramientas | Recursos, comandos de arranque, nuevo servicio, backup de todos, restaurar, limpieza, ruta base, ayuda | `-m`, `-s`, `-n [cmd]`, `-k all`, `-r`, `-b`, `--set-user-home`, `--help` |
 | Cabecera | ⌨️ Menú interactivo | `./update.sh` sin argumentos (el menú completo) |
 
@@ -133,7 +133,7 @@ dockpanel/
 | DELETE | `/api/sessions/{id}` | Interrumpe una tarea en curso o cierra una terminada. |
 | WS | `/api/sessions/{id}/ws` | Terminal: binario = salida; texto JSON `{"t":"in","d":…}` / `{"t":"resize","c":…,"r":…}`. |
 
-Acciones: `menu`, `update`, `update_all`, `update_list`, `start`, `stop`, `restart`, `recreate`, `policy`, `logs`, `backup`, `check`, `stats`, `show`, `clean`, `restore`, `new`, `user_home`, `help`.
+Acciones: `menu`, `update`, `update_all`, `update_list`, `batch` (`{"op": "restart", "services": [...]}`; `op`: start, stop, restart, recreate, update, backup, policy), `start`, `stop`, `restart`, `recreate`, `policy`, `logs`, `backup`, `check`, `stats`, `show`, `clean`, `restore`, `new`, `user_home`, `help`.
 
 ## Desarrollo y tests
 

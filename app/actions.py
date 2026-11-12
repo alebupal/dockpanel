@@ -9,11 +9,23 @@ from .host import SERVICE_RE
 POLICIES = ("unless-stopped", "always", "on-failure", "no")
 LIFECYCLE = ("start", "stop", "restart", "recreate")
 
-# Actualiza solo los servicios indicados (los que tienen versión nueva) y limpia imágenes al final,
-# igual que la subopción 'u' tras 'c' en el menú interactivo. $1 = update.sh, $2.. = servicios.
-UPDATE_LIST_SCRIPT = """u="$1"; shift; rc=0
-for s in "$@"; do /bin/bash "$u" "$s" -f || rc=1; done
-echo "🧹 Limpiando imágenes antiguas..."; docker image prune -f
+BATCH_OPS = ("start", "stop", "restart", "recreate", "update", "backup", "policy")
+
+# Aplica una operación a varios servicios llamando a update.sh una vez por servicio (como hace
+# el propio menú con 'a'). $1 = update.sh, $2 = operación, $3 = extra (política o -f), $4.. = servicios.
+# Tras actualizar se limpian las imágenes antiguas una sola vez, igual que '-a' o 'u' tras 'c'.
+BATCH_SCRIPT = """u="$1"; op="$2"; extra="$3"; shift 3; rc=0; n=0
+for s in "$@"; do
+  n=$((n + 1))
+  printf '\\n\\033[1;36m━━━ [%d/%d] %s ━━━\\033[0m\\n' "$n" "$#" "$s"
+  case "$op" in
+    update) /bin/bash "$u" "$s" $extra || rc=1 ;;
+    policy) /bin/bash "$u" --restart-policy "$s" "$extra" || rc=1 ;;
+    backup) /bin/bash "$u" --backup "$s" || rc=1 ;;
+    *) /bin/bash "$u" "--$op" "$s" || rc=1 ;;
+  esac
+done
+if [ "$op" = update ]; then echo "🧹 Limpiando imágenes antiguas..."; docker image prune -f; fi
 exit $rc"""
 
 
@@ -59,12 +71,30 @@ def build_plan(req: dict, names: dict[str, str]) -> Plan:
         )
     if action == "update_all":
         return Plan("Actualizar todos" + (" (forzado)" if force else ""), ["-a", "-f"] if force else ["-a"])
-    if action == "update_list":
+    if action in ("batch", "update_list"):
+        if action == "update_list":  # actualizar los que tienen versión nueva (forzando)
+            op, force = "update", True
+        else:
+            op = req.get("op")
+        if op not in BATCH_OPS:
+            raise ActionError("Operación por lotes no válida")
         services = req.get("services")
         if not isinstance(services, list) or not services:
-            raise ActionError("No hay servicios que actualizar")
-        svcs = [_service(s, known) for s in services]
-        return Plan(f"Actualizar disponibles ({len(svcs)})", svcs, script=UPDATE_LIST_SCRIPT)
+            raise ActionError("No hay servicios seleccionados")
+        svcs = list(dict.fromkeys(_service(s, known) for s in services))
+        extra = ""
+        if op == "update" and force:
+            extra = "-f"
+        if op == "policy":
+            extra = req.get("policy")
+            if extra not in POLICIES:
+                raise ActionError("Política de reinicio no válida")
+        verbs = {"start": "Iniciar", "stop": "Detener", "restart": "Reiniciar", "recreate": "Recrear",
+                 "update": "Actualizar", "backup": "Backup", "policy": f"Política {extra}"}
+        title = f"{verbs[op]} {len(svcs)} servicio(s)" + (" (forzado)" if extra == "-f" else "")
+        if action == "update_list":
+            title = f"Actualizar disponibles ({len(svcs)})"
+        return Plan(title, [op, extra, *svcs], script=BATCH_SCRIPT)
     if action in LIFECYCLE:
         svc = _service(req.get("service"), known, allow_all=True)
         verbs = {"start": "Iniciar", "stop": "Detener", "restart": "Reiniciar", "recreate": "Recrear"}

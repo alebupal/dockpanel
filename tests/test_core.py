@@ -40,10 +40,23 @@ class BuildPlanTests(unittest.TestCase):
 
     def test_update_list_uses_positional_args(self):
         plan = build_plan({"action": "update_list", "services": ["portainer", "it_tools"]}, NAMES)
-        self.assertEqual(plan.args, ["portainer", "it_tools"])
+        self.assertEqual(plan.args, ["update", "-f", "portainer", "it_tools"])
         self.assertIn('"$@"', plan.script)
         with self.assertRaises(ActionError):
             build_plan({"action": "update_list", "services": []}, NAMES)
+
+    def test_batch(self):
+        plan = build_plan({"action": "batch", "op": "restart", "services": ["portainer", "it_tools", "portainer"]}, NAMES)
+        self.assertEqual(plan.args, ["restart", "", "portainer", "it_tools"])  # sin duplicados
+        self.assertIsNotNone(plan.script)
+        plan = build_plan({"action": "batch", "op": "update", "force": True, "services": ["it_tools"]}, NAMES)
+        self.assertEqual(plan.args[:2], ["update", "-f"])
+        plan = build_plan({"action": "batch", "op": "policy", "policy": "no", "services": ["it_tools"]}, NAMES)
+        self.assertEqual(plan.args[:2], ["policy", "no"])
+        for bad in ({"op": "rm", "services": ["it_tools"]}, {"op": "start", "services": []},
+                    {"op": "start", "services": ["nope"]}, {"op": "policy", "policy": "x", "services": ["it_tools"]}):
+            with self.assertRaises(ActionError):
+                build_plan({"action": "batch", **bad}, NAMES)
 
     def test_readonly_actions(self):
         for action in ("logs", "check", "stats", "show", "help"):
