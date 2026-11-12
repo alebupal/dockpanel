@@ -17,7 +17,7 @@ Panel web sencillo para gestionar los servicios de `docker/` con el **mismo `upd
 | | Actualizar (y forzando recreación) | `./update.sh <svc> [-f]` |
 | | Logs en vivo | `-l <svc>` |
 | | Backup, política de reinicio, comando de arranque | `-k <svc>`, `--restart-policy <svc> <pol>`, `-s <svc>` |
-| 🚀 Actualizaciones | Comprobar (marca los servicios con imagen nueva) | `--check-tsv` (= `-c`) |
+| 🚀 Actualizaciones | Comprobar con barra de progreso (marca los servicios con imagen nueva). Al terminar cualquier tarea que modifica algo (web, menú o SSH) se recomprueban solos los que estaban pendientes | `--check-tsv [svc...]` (= `-c`) |
 | | Actualizar disponibles | `u` tras `c` en el menú (cada uno con `-f` y `image prune` al final) |
 | | Actualizar todos (opción forzar) | `-a [-f]` |
 | ⏯️ Lote | Casillas por servicio (o clic en la fila), «Seleccionar todos» y casilla de cabecera (respeta el filtro). Iniciar, reiniciar, recrear, detener, actualizar, backup, política y comando de arranque **sobre los seleccionados**; sin selección, sobre todos | por servicio: `update.sh --start <svc>`…; sin selección: `--start all`, `-a [-f]`, `-k all`… |
@@ -131,7 +131,8 @@ dockpanel/
 | GET | `/api/health` | Salud (sin autenticación). |
 | GET | `/api/info` | Versión, `DOCKER_DIR`, contenedor e imagen del panel. |
 | GET | `/api/services` | Servicios (`update.sh --list`) con el último resultado de la comprobación. |
-| POST | `/api/check` | Comprueba actualizaciones (`update.sh --check-tsv`). |
+| POST | `/api/check` | Lanza la comprobación en segundo plano (`update.sh --check-tsv`). |
+| GET | `/api/check` | Progreso y resultados: `running`, `done`, `total`, `scope` (`all`/`partial`), `error`, `check`. |
 | GET | `/api/sessions` | Tareas abiertas. |
 | POST | `/api/sessions` | Lanza una acción: `{"action": "update", "service": "portainer", "force": false}`. |
 | DELETE | `/api/sessions/{id}` | Interrumpe una tarea en curso o cierra una terminada. |

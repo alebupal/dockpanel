@@ -145,6 +145,40 @@ class CliTests(unittest.TestCase):
         self.assertIn("sha256:img", self._run([]))
 
 
+class CheckTests(unittest.TestCase):
+    def test_progress_and_partial_merge(self):
+        from app import main
+
+        script = 'printf "a\\tok\\n"; sleep 0.2; printf "b\\tupdate\\n"'
+        main.state.update(check={"a": "update", "b": "update", "c": "update"}, check_time=1.0)
+        with mock.patch.object(main.host, "on_host", return_value=["/bin/sh", "-c", script]):
+            asyncio.run(main.run_check(["a", "b"]))
+        st = main._check_status()
+        self.assertFalse(st["running"])
+        self.assertEqual((st["done"], st["total"], st["scope"]), (2, 2, "partial"))
+        # Parcial: solo cambian los recomprobados y no se toca la hora de la comprobación completa
+        self.assertEqual(st["check"], {"a": "ok", "b": "update", "c": "update"})
+        self.assertEqual(st["check_time"], 1.0)
+
+    def test_recheck_after_modifying_task(self):
+        from app import main
+
+        main.state.update(check={"a": "update", "b": "ok"})
+        calls = []
+
+        async def fake_check(services=None):
+            calls.append(services)
+
+        async def scenario():
+            with mock.patch.object(main, "run_check", fake_check):
+                main._on_session_finished(mock.Mock(container="dockpanel-job-x"))
+                main._on_session_finished(mock.Mock(container=""))  # consulta: no recomprueba
+                await asyncio.sleep(0)
+
+        asyncio.run(scenario())
+        self.assertEqual(calls, [["a"]])
+
+
 class SessionTests(unittest.TestCase):
     def test_pty_session_output_and_exit(self):
         async def scenario():

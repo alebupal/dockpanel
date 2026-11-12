@@ -184,7 +184,16 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; 
   font: inherit;
   width: 180px;
 }
-#checkInfo { margin: 6px 0 8px; min-height: 1em; }
+#checkInfo { margin: 6px 0 8px; min-height: 1em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.progress {
+  flex: 1;
+  min-width: 120px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--neutral-bg);
+  overflow: hidden;
+}
+.progress > span { display: block; height: 100%; background: var(--primary); border-radius: inherit; transition: width 0.3s; }
 
 /* ── Tabla ──────────────────────────────────────────────── */
 .table-wrap { overflow-x: auto; }

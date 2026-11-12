@@ -35,8 +35,100 @@ state: dict = {
     "check": {},  # carpeta → update|ok|error
     "check_time": None,
     "check_running": False,
+    "check_done": 0,  # progreso de la comprobación en curso
+    "check_total": 0,
+    "check_scope": "all",  # all | parcial (solo algunos servicios)
+    "check_error": None,
+    "check_queue": None,  # None | "all" | set de carpetas pendientes de recomprobar
     "jobs_scan": 0.0,
 }
+CHECK_TIMEOUT = 900
+_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:
+    task = asyncio.get_running_loop().create_task(coro)
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+async def run_check(services: list[str] | None = None) -> None:
+    """Comprueba actualizaciones en segundo plano (todos o solo ``services``).
+
+    update.sh --check-tsv escribe cada servicio en cuanto termina, así que el resultado y el
+    progreso se actualizan sobre la marcha. Si ya hay una comprobación en curso, la petición
+    se encola y se ejecuta al acabar.
+    """
+    if state["check_running"]:
+        queued = state["check_queue"]
+        if services is None or queued == "all":
+            state["check_queue"] = "all"
+        else:
+            state["check_queue"] = set(queued or ()) | set(services)
+        return
+    state.update(check_running=True, check_done=0, check_error=None,
+                 check_scope="all" if services is None else "partial")
+    try:
+        state["check_total"] = len(services) if services is not None else len(await _list_services())
+        argv = host.on_host(host.update_sh_argv(["--check-tsv", *(services or [])]))
+        proc = await asyncio.create_subprocess_exec(
+            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        results: dict[str, str] = {}
+
+        async def read_lines() -> None:
+            async for raw in proc.stdout:
+                for folder, status in parse_check(raw.decode("utf-8", "replace")).items():
+                    if folder not in results:
+                        state["check_done"] += 1
+                    results[folder] = status
+                    state["check"][folder] = status
+
+        try:
+            await asyncio.wait_for(read_lines(), CHECK_TIMEOUT)
+        except asyncio.TimeoutError:
+            proc.kill()
+            state["check_error"] = "La comprobación ha superado el tiempo máximo"
+        stderr = (await proc.stderr.read()).decode("utf-8", "replace")
+        rc = await proc.wait()
+        if rc != 0 and not results and not state["check_error"]:
+            state["check_error"] = stderr.strip()[-500:] or f"update.sh --check-tsv ha fallado ({rc})"
+        if services is None and results:
+            state["check"] = results  # olvida servicios que ya no existen
+            state["check_time"] = time.time()
+    except Exception as exc:  # noqa: BLE001 - se muestra en la web
+        state["check_error"] = str(getattr(exc, "detail", exc))
+    finally:
+        state["check_running"] = False
+        queued, state["check_queue"] = state["check_queue"], None
+        if queued:
+            _spawn(run_check(None if queued == "all" else sorted(queued)))
+
+
+def _check_status() -> dict:
+    return {
+        "running": state["check_running"],
+        "done": state["check_done"],
+        "total": state["check_total"],
+        "scope": state["check_scope"],
+        "error": state["check_error"],
+        "check": state["check"],
+        "check_time": state["check_time"],
+    }
+
+
+def _on_session_finished(session) -> None:
+    """Tras una tarea que ha podido cambiar imágenes (web, menú o SSH), se recomprueban los
+    servicios que estaban marcados con actualización pendiente: así desaparece el aviso de los
+    que ya se han actualizado y se mantiene el de los que han fallado."""
+    if not session.container:
+        return  # solo consultas
+    pending = sorted(f for f, st in state["check"].items() if st == "update")
+    if pending:
+        _spawn(run_check(pending))
+
+
+manager.on_finish = _on_session_finished
 JOBS_SCAN_INTERVAL = 8  # s entre búsquedas de tareas lanzadas fuera de la web
 
 
@@ -150,19 +242,17 @@ async def services():
 
 @app.post("/api/check")
 async def check():
+    """Lanza la comprobación en segundo plano; el progreso se consulta con GET /api/check."""
     _require_docker_dir()
-    if state["check_running"]:
-        raise HTTPException(409, "Ya hay una comprobación en curso")
-    state["check_running"] = True
-    try:
-        res = await asyncio.to_thread(host.run_on_host, host.update_sh_argv(["--check-tsv"]), 600)
-    finally:
-        state["check_running"] = False
-    if res.returncode != 0:
-        raise HTTPException(502, (res.stderr or res.stdout).strip()[-500:] or "Error al comprobar")
-    state["check"] = parse_check(res.stdout)
-    state["check_time"] = time.time()
-    return {"check": state["check"], "check_time": state["check_time"]}
+    if not state["check_running"]:
+        _spawn(run_check())
+        await asyncio.sleep(0)  # deja arrancar la tarea: la respuesta ya sale con running=True
+    return _check_status()
+
+
+@app.get("/api/check")
+async def check_status():
+    return _check_status()
 
 
 @app.get("/api/sessions")

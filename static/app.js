@@ -7,6 +7,8 @@
     services: [],
     info: {},
     checkRunning: false,
+    check: null, // último estado de /api/check (progreso)
+    checkTime: null,
     selected: new Set(), // carpetas marcadas para acciones en lote
     terms: new Map(), // id → { term, fit, ws, pane, tab, info, closed }
     active: null,
@@ -82,8 +84,10 @@
       const existing = new Set(data.services.map((s) => s.folder));
       for (const f of [...state.selected]) if (!existing.has(f)) state.selected.delete(f);
       state.checkRunning = data.check_running;
+      state.checkTime = data.check_time;
       renderServices();
-      renderCheckInfo(data.check_time);
+      renderCheckInfo();
+      if (data.check_running) watchCheck();
     } catch (e) {
       $("#svcBody").innerHTML = `<tr><td colspan="6" class="muted">⚠️ ${esc(e.message)}</td></tr>`;
     }
@@ -136,7 +140,7 @@
           ${toggle}
           <button type="button" class="btn btn-sm" data-svc-action="restart" title="Reiniciar">🔄</button>
           <button type="button" class="btn btn-sm" data-svc-action="update" title="Actualizar (pull + despliegue)">⬇️</button>
-          <button type="button" class="btn btn-sm" data-svc-action="logs" title="Ver logs en vivo">📜</button>
+          <button type="button" class="btn btn-sm" data-svc-action="logs" title="Ver logs en vivo">📋</button>
           <span class="more">
             <button type="button" class="btn btn-sm keep" data-more aria-haspopup="true" title="Más acciones">⋯</button>
             <span class="more-menu" role="menu">
@@ -146,11 +150,11 @@
               <button type="button" role="menuitem" data-svc-action="restart">🔄 Reiniciar</button>
               <button type="button" role="menuitem" data-svc-action="recreate">🔨 Recrear (sin descargar)</button>
               <button type="button" role="menuitem" data-svc-action="update">⬇️ Actualizar</button>
-              <button type="button" role="menuitem" data-svc-action="update_force">⬇️ Actualizar forzando recreación</button>
+              <button type="button" role="menuitem" data-svc-action="update_force">⏬ Actualizar forzando recreación</button>
               <button type="button" role="menuitem" data-svc-action="backup">💾 Crear backup</button>
               <button type="button" role="menuitem" data-svc-action="policy">🔁 Política de reinicio</button>
               <button type="button" role="menuitem" data-svc-action="show">📜 Comando de arranque</button>
-              <button type="button" role="menuitem" data-svc-action="logs">📜 Logs en vivo</button>
+              <button type="button" role="menuitem" data-svc-action="logs">📋 Logs en vivo</button>
             </span>
           </span>
         </td>
@@ -158,31 +162,70 @@
     }).join("");
   }
 
-  function renderCheckInfo(ts) {
+  function renderCheckInfo() {
     const el = $("#checkInfo");
-    if (state.checkRunning) el.textContent = "🔍 Comprobando actualizaciones…";
-    else if (ts) {
+    const c = state.check;
+    const btn = $("#btnCheck");
+    btn.disabled = state.checkRunning;
+    if (state.checkRunning) {
+      const done = c ? c.done : 0;
+      const total = c && c.total ? c.total : 0;
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      const label = c && c.scope === "partial"
+        ? `🔍 Recomprobando ${total} servicio(s) tras la última tarea…`
+        : "🔍 Comprobando actualizaciones…";
+      el.innerHTML = `<span class="check-label">${label} <b>${done}/${total || "?"}</b></span>
+        <span class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${pct}%"></span></span>`;
+      btn.innerHTML = `🔍 Comprobando ${total ? pct + "%" : "…"}`;
+      return;
+    }
+    btn.textContent = "🔍 Comprobar";
+    if (c && c.error) { el.textContent = `⚠️ ${c.error}`; return; }
+    const ts = state.checkTime;
+    if (ts) {
       const n = state.services.filter((s) => s.update === "update").length;
       el.textContent = `Última comprobación ${timeAgo(ts)}: ${n ? n + " con actualización disponible" : "todo al día"}.`;
     } else el.textContent = "Pulsa «Comprobar» para ver qué servicios tienen imagen nueva.";
+  }
+
+  // Aplica el estado de la comprobación (resultados parciales incluidos) a la tabla
+  function applyCheck(c) {
+    state.check = c;
+    state.checkRunning = c.running;
+    state.checkTime = c.check_time;
+    for (const s of state.services) s.update = c.check[s.folder] || null;
+    renderServices();
+    renderCheckInfo();
+  }
+
+  let checkWatcher = null;
+  function watchCheck() {
+    if (checkWatcher) return;
+    const tick = async () => {
+      try {
+        const c = await api("/api/check");
+        applyCheck(c);
+        if (!c.running) {
+          checkWatcher = null;
+          if (c.error) toast(c.error, true);
+          loadServices();
+          return;
+        }
+      } catch (e) { /* servidor reiniciándose: se reintenta */ }
+      checkWatcher = setTimeout(tick, 700);
+    };
+    checkWatcher = setTimeout(tick, 300);
   }
 
   $("#filter").addEventListener("input", renderServices);
   $("#btnRefresh").addEventListener("click", loadServices);
 
   $("#btnCheck").addEventListener("click", async () => {
-    const btn = $("#btnCheck");
-    btn.disabled = true;
-    state.checkRunning = true;
-    renderCheckInfo();
     try {
-      await api("/api/check", { method: "POST", body: {} });
+      applyCheck(await api("/api/check", { method: "POST", body: {} }));
+      watchCheck();
     } catch (e) {
       toast(e.message, true);
-    } finally {
-      btn.disabled = false;
-      state.checkRunning = false;
-      await loadServices();
     }
   });
 
@@ -583,6 +626,7 @@
           updateTab(entry);
           entry.term.write(`\r\n\x1b[90m── Tarea terminada (código ${msg.code}) ──\x1b[0m\r\n`);
           setTimeout(loadServices, 300);
+          if (entry.info.container) setTimeout(watchCheck, 500);
         }
         return;
       }

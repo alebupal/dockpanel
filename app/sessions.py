@@ -40,6 +40,7 @@ class Session:
     created: float = field(default_factory=time.time)
     exit_code: int | None = None
     finished: float | None = None
+    on_finish: object = None  # callable(session) al terminar
     _fd: int = -1
     _proc: subprocess.Popen | None = None
     _buffer: bytearray = field(default_factory=bytearray)
@@ -99,6 +100,11 @@ class Session:
         self.exit_code = code
         self.finished = time.time()
         self._broadcast({"t": "exit", "code": code})
+        if self.on_finish:
+            try:
+                self.on_finish(self)
+            except Exception:  # noqa: BLE001 - un fallo del aviso no debe afectar a la sesión
+                pass
 
     def _append(self, data: bytes) -> None:
         self._buffer += data
@@ -164,6 +170,7 @@ class Session:
 class SessionManager:
     def __init__(self) -> None:
         self.sessions: dict[str, Session] = {}
+        self.on_finish = None  # callable(session) cuando termina cualquier sesión
 
     def list(self) -> list[dict]:
         return [s.to_dict() for s in sorted(self.sessions.values(), key=lambda s: s.created)]
@@ -180,6 +187,7 @@ class SessionManager:
             container=container,
             reattached=reattached,
         )
+        session.on_finish = lambda s: self.on_finish(s) if self.on_finish else None
         session.start(cols, rows)
         self.sessions[session.id] = session
         self._prune()
