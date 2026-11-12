@@ -16,12 +16,12 @@ Panel web sencillo para gestionar los servicios de `docker/` con el **mismo `upd
 | Fila de un servicio | Iniciar, detener, reiniciar, recrear | `--start/--stop/--restart/--recreate <svc>` |
 | | Actualizar (y forzando recreación) | `./update.sh <svc> [-f]` |
 | | Logs en vivo | `-l <svc>` |
-| | Backup, política de reinicio | `-k <svc>`, `--restart-policy <svc> <pol>` |
+| | Backup, política de reinicio, comando de arranque | `-k <svc>`, `--restart-policy <svc> <pol>`, `-s <svc>` |
 | 🚀 Actualizaciones | Comprobar (marca los servicios con imagen nueva) | `--check-tsv` (= `-c`) |
 | | Actualizar disponibles | `u` tras `c` en el menú (cada uno con `-f` y `image prune` al final) |
 | | Actualizar todos (opción forzar) | `-a [-f]` |
-| ⏯️ Lote | Casillas por servicio (o clic en la fila), «Seleccionar todos» y casilla de cabecera (respeta el filtro). Iniciar, reiniciar, recrear, detener, actualizar, backup y política **sobre los seleccionados**; sin selección, sobre todos | por servicio: `update.sh --start <svc>`…; sin selección: `--start all`, `-a [-f]`, `-k all`… |
-| 🛠️ Herramientas | Recursos, comandos de arranque, nuevo servicio, backup de todos, restaurar, limpieza, ruta base, ayuda | `-m`, `-s`, `-n [cmd]`, `-k all`, `-r`, `-b`, `--set-user-home`, `--help` |
+| ⏯️ Lote | Casillas por servicio (o clic en la fila), «Seleccionar todos» y casilla de cabecera (respeta el filtro). Iniciar, reiniciar, recrear, detener, actualizar, backup, política y comando de arranque **sobre los seleccionados**; sin selección, sobre todos | por servicio: `update.sh --start <svc>`…; sin selección: `--start all`, `-a [-f]`, `-k all`… |
+| 🛠️ Herramientas | Recursos, nuevo servicio, restaurar, limpieza, ruta base, ayuda | `-m`, `-n [cmd]`, `-r`, `-b`, `--set-user-home`, `--help` |
 | Cabecera | ⌨️ Menú interactivo | `./update.sh` sin argumentos (el menú completo) |
 
 Cada acción abre una pestaña de terminal. Las tareas **no dependen del navegador**: si cierras la página siguen en marcha y al volver aparecen otra vez con su salida. Cerrar con × una tarea en curso la interrumpe (se pide confirmación).
@@ -133,7 +133,7 @@ dockpanel/
 | DELETE | `/api/sessions/{id}` | Interrumpe una tarea en curso o cierra una terminada. |
 | WS | `/api/sessions/{id}/ws` | Terminal: binario = salida; texto JSON `{"t":"in","d":…}` / `{"t":"resize","c":…,"r":…}`. |
 
-Acciones: `menu`, `update`, `update_all`, `update_list`, `batch` (`{"op": "restart", "services": [...]}`; `op`: start, stop, restart, recreate, update, backup, policy), `start`, `stop`, `restart`, `recreate`, `policy`, `logs`, `backup`, `check`, `stats`, `show`, `clean`, `restore`, `new`, `user_home`, `help`.
+Acciones: `menu`, `update`, `update_all`, `update_list`, `batch` (`{"op": "restart", "services": [...]}`; `op`: start, stop, restart, recreate, update, backup, policy), `start`, `stop`, `restart`, `recreate`, `policy`, `logs`, `backup`, `check`, `stats`, `show` (`{"services": [...]}` opcional; sin servicios = todos), `clean`, `restore`, `new`, `user_home`, `help`.
 
 ## Desarrollo y tests
 

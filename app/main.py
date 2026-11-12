@@ -182,7 +182,7 @@ async def create_session(request: Request):
     if not isinstance(body, dict):
         raise HTTPException(400, "JSON no válido")
 
-    needs_services = body.get("action") not in ("menu", "check", "stats", "show", "help", "clean",
+    needs_services = body.get("action") not in ("menu", "check", "stats", "help", "clean",
                                                  "restore", "new", "user_home", "update_all")
     names = {s["folder"]: s["name"] for s in await _list_services()} if needs_services else {}
     try:

@@ -58,6 +58,15 @@ class BuildPlanTests(unittest.TestCase):
             with self.assertRaises(ActionError):
                 build_plan({"action": "batch", **bad}, NAMES)
 
+    def test_show_one_selected_or_all(self):
+        self.assertEqual(build_plan({"action": "show"}, NAMES).args, ["--show"])
+        self.assertEqual(build_plan({"action": "show", "services": []}, NAMES).args, ["--show"])
+        plan = build_plan({"action": "show", "services": ["portainer", "it_tools"]}, NAMES)
+        self.assertEqual(plan.args, ["--show", "portainer", "it_tools"])
+        self.assertFalse(plan.modifies)
+        with self.assertRaises(ActionError):
+            build_plan({"action": "show", "services": ["../x"]}, NAMES)
+
     def test_readonly_actions(self):
         for action in ("logs", "check", "stats", "show", "help"):
             body = {"action": action, "service": "portainer"}

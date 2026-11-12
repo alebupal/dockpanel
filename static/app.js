@@ -148,6 +148,7 @@
               <button type="button" role="menuitem" data-svc-action="update_force">⬇️ Actualizar forzando recreación</button>
               <button type="button" role="menuitem" data-svc-action="backup">💾 Crear backup</button>
               <button type="button" role="menuitem" data-svc-action="policy">🔁 Política de reinicio</button>
+              <button type="button" role="menuitem" data-svc-action="show">📜 Comando de arranque</button>
               <button type="button" role="menuitem" data-svc-action="logs">📜 Logs en vivo</button>
             </span>
           </span>
@@ -247,6 +248,8 @@
 
   function batchAction(op) {
     const sel = selectedServices();
+    // Solo consulta: sin confirmación (sin selección = todos)
+    if (op === "show") return runAction({ action: "show", services: sel.map((s) => s.folder) });
     const force = $("#chkForce").checked;
     const verbs = {
       start: "Iniciar", stop: "Detener", restart: "Reiniciar", recreate: "Recrear (en local, sin descargar)",
@@ -318,6 +321,7 @@
     } else if (ask && !confirm(ask + selfNote)) return;
 
     if (act === "policy") return askPolicy(svc.name, (policy) => runAction({ action: "policy", service: svc.folder, policy }));
+    if (act === "show") return runAction({ action: "show", services: [svc.folder] });
     if (act === "update_force") return runAction({ action: "update", service: svc.folder, force: true });
     runAction({ action: act, service: svc.folder });
   }

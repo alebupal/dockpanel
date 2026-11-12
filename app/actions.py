@@ -105,6 +105,15 @@ def build_plan(req: dict, names: dict[str, str]) -> Plan:
         if policy not in POLICIES:
             raise ActionError("Política de reinicio no válida")
         return Plan(f"Política {policy} → {_label(svc, names)}", ["--restart-policy", svc, policy])
+    if action == "show":
+        services = req.get("services")
+        if services in (None, [], "all"):
+            return Plan("Comandos de arranque", ["--show"], modifies=False)
+        if not isinstance(services, list):
+            raise ActionError("Lista de servicios no válida")
+        svcs = list(dict.fromkeys(_service(s, known) for s in services))
+        title = f"Comando {_label(svcs[0], names)}" if len(svcs) == 1 else f"Comandos de {len(svcs)} servicio(s)"
+        return Plan(title, ["--show", *svcs], modifies=False)
     if action == "logs":
         svc = _service(req.get("service"), known)
         return Plan(f"Logs {_label(svc, names)}", ["--logs", svc], modifies=False)
@@ -126,7 +135,6 @@ def build_plan(req: dict, names: dict[str, str]) -> Plan:
     simple = {
         "check": Plan("Comprobar actualizaciones", ["--check"], modifies=False),
         "stats": Plan("Monitor de recursos", ["--stats"], modifies=False),
-        "show": Plan("Comandos de arranque", ["--show"], modifies=False),
         "help": Plan("Ayuda de update.sh", ["--help"], modifies=False),
         "clean": Plan("Limpieza y mantenimiento", ["--clean"]),
         "restore": Plan("Restaurar backup", ["--restore"]),
