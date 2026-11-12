@@ -43,6 +43,16 @@
     return data;
   }
 
+  // "hoy a las 08:00", "mañana a las 08:00", "ayer a las 08:00" o fecha completa
+  function whenLabel(ts) {
+    const d = new Date(ts * 1000);
+    const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((day(d) - day(new Date())) / 86400000);
+    const names = { "-1": "ayer", 0: "hoy", 1: "mañana" };
+    return names[diff] !== undefined ? `${names[diff]} a las ${hm}` : `${d.toLocaleDateString()} ${hm}`;
+  }
+
   function timeAgo(ts) {
     if (!ts) return "";
     const s = Math.round(Date.now() / 1000 - ts);
@@ -85,6 +95,8 @@
       for (const f of [...state.selected]) if (!existing.has(f)) state.selected.delete(f);
       state.checkRunning = data.check_running;
       state.checkTime = data.check_time;
+      state.checkSource = data.check_source;
+      state.checkNext = data.check_next;
       renderServices();
       renderCheckInfo();
       if (data.check_running) watchCheck();
@@ -175,17 +187,20 @@
         ? `🔍 Recomprobando ${total} servicio(s) tras la última tarea…`
         : "🔍 Comprobando actualizaciones…";
       el.innerHTML = `<span class="check-label">${label} <b>${done}/${total || "?"}</b></span>
-        <span class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${pct}%"></span></span>`;
-      btn.innerHTML = `🔍 Comprobando ${total ? pct + "%" : "…"}`;
+        <span class="progress${done ? "" : " indeterminate"}" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${pct}%"></span></span>`;
+      btn.innerHTML = `🔍 Comprobando ${done ? pct + "%" : "…"}`;
       return;
     }
     btn.textContent = "🔍 Comprobar";
     if (c && c.error) { el.textContent = `⚠️ ${c.error}`; return; }
     const ts = state.checkTime;
+    const next = state.checkNext ? ` · Próxima automática: ${whenLabel(state.checkNext)}.` : "";
     if (ts) {
       const n = state.services.filter((s) => s.update === "update").length;
-      el.textContent = `Última comprobación ${timeAgo(ts)}: ${n ? n + " con actualización disponible" : "todo al día"}.`;
-    } else el.textContent = "Pulsa «Comprobar» para ver qué servicios tienen imagen nueva.";
+      const kind = { auto: "automática", start: "al arrancar el panel" }[state.checkSource];
+      const what = kind ? `Comprobación ${kind} ${whenLabel(ts)}` : `Última comprobación ${timeAgo(ts)}`;
+      el.textContent = `${what}: ${n ? n + " con actualización disponible" : "todo al día"}.${next}`;
+    } else el.textContent = `Pulsa «Comprobar» para ver qué servicios tienen imagen nueva.${next}`;
   }
 
   // Aplica el estado de la comprobación (resultados parciales incluidos) a la tabla
@@ -193,6 +208,8 @@
     state.check = c;
     state.checkRunning = c.running;
     state.checkTime = c.check_time;
+    state.checkSource = c.check_source;
+    state.checkNext = c.check_next;
     for (const s of state.services) s.update = c.check[s.folder] || null;
     renderServices();
     renderCheckInfo();
@@ -743,6 +760,12 @@
   api("/api/info").then((info) => {
     state.info = info;
     if (info.docker_dir) $("#subtitle").textContent = `Gestor de servicios Docker · ${info.docker_dir}/update.sh`;
+    const missing = info.update_sh_missing || [];
+    const notice = $("#shNotice");
+    notice.hidden = !missing.length;
+    if (missing.length) {
+      notice.textContent = `⚠️ El update.sh del servidor (${info.docker_dir}) es más antiguo que el panel y le falta: ${missing.join("; ")}. Actualiza el repositorio docker (git pull) y recarga la página.`;
+    }
   }).catch(() => {});
   loadServices();
   syncSessions();

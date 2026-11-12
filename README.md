@@ -24,6 +24,8 @@ Panel web sencillo para gestionar los servicios de `docker/` con el **mismo `upd
 | 🛠️ Herramientas | Recursos, nuevo servicio, restaurar, limpieza, ruta base, ayuda | `-m`, `-n [cmd]`, `-r`, `-b`, `--set-user-home`, `--help` |
 | Cabecera | ⌨️ Menú interactivo | `./update.sh` sin argumentos (el menú completo) |
 
+La web avisa si el `update.sh` del servidor es más antiguo que el panel (le faltan opciones que usa, como el progreso de la comprobación): basta con actualizar el repositorio `docker`.
+
 Cada acción abre una pestaña de terminal. Debajo hay una barra para responder (campo de texto + teclas rápidas ⏎, s, n, q, Ctrl+C, ↑, ↓ e ir al final).
 
 **Móvil:** la terminal se abre a pantalla completa al lanzar una acción y se minimiza a un botón flotante «🖥️ Terminal»; el historial se desplaza deslizando el dedo (con inercia) y se responde con la barra, sin abrir el teclado sobre la salida. Los grupos de botones se desplazan en horizontal y el menú ⋯ de cada servicio aparece como hoja inferior.
@@ -94,6 +96,8 @@ Abre `http://<servidor>:8092`.
 | `AUTH_USER` / `AUTH_PASSWORD` | vacías | Activan autenticación HTTP Basic en toda la web. |
 | `HOST_HOME` | `/root` | `HOME` con el que se ejecuta `update.sh` en el host. |
 | `MAX_RUNNING_JOBS` | `6` | Tareas simultáneas máximas. |
+| `CHECK_TIMES` | `08:00` | Horas de la comprobación automática diaria de actualizaciones (`HH:MM`, varias separadas por comas; vacío u `off` la desactiva). Usa la zona horaria `TZ`. El resultado queda marcado en la web. |
+| `CHECK_ON_START` | `true` | Comprobar actualizaciones al arrancar el panel (tras reiniciarlo o actualizarlo no se queda sin datos). |
 | `USER_HOME`, `BACKUP_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_KEEP_MIN`, `HEALTH_WAIT`, `HEALTH_TIMEOUT`, `HEALTH_POLL` | — | Si se definen en el panel, se pasan tal cual a `update.sh`. |
 
 `update.sh` toma la ruta base de usuario de `docker/.user_home` (opción **⚙️ Ruta base** o `--set-user-home`). Si no existe, usa `HOME`, que dentro del panel es `/root`: conviene fijarla una vez.

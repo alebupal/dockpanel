@@ -193,6 +193,22 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; 
   background: var(--neutral-bg);
   overflow: hidden;
 }
+.progress.indeterminate > span {
+  width: 35% !important;
+  animation: indeterminate 1.3s ease-in-out infinite;
+}
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(290%); }
+}
+.notice {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 13px;
+}
 .progress > span { display: block; height: 100%; background: var(--primary); border-radius: inherit; transition: width 0.3s; }
 
 /* ── Tabla ──────────────────────────────────────────────── */

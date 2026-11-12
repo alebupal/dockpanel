@@ -67,6 +67,27 @@ def on_host(argv: list[str]) -> list[str]:
     return ["chroot", HOST_ROOT, *host_env(), *argv]
 
 
+# Funciones de update.sh que usa el panel: (texto que las identifica en el script, descripción)
+UPDATE_SH_FEATURES = (
+    ("list_services_tsv()", "estado de los servicios (--list)"),
+    ("Opcional: solo las carpetas indicadas", "progreso al comprobar actualizaciones (--check-tsv en streaming)"),
+    ('--show [svc...|all]', "comando de arranque por servicio (--show <svc>)"),
+)
+
+
+def missing_update_sh_features() -> list[str] | None:
+    """Funciones que le faltan al update.sh del host (se lee el fichero, no se ejecuta).
+
+    None si no se puede leer. Sirve para avisar de que el repositorio docker está desactualizado.
+    """
+    try:
+        with open(f"{HOST_ROOT}{update_sh_path()}", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return None
+    return [desc for marker, desc in UPDATE_SH_FEATURES if marker not in text]
+
+
 def update_sh_argv(args: list[str]) -> list[str]:
     return ["/bin/bash", update_sh_path(), *args]
 

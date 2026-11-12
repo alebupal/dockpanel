@@ -8,9 +8,11 @@ import json
 import os
 import secrets
 import time
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -39,10 +41,64 @@ state: dict = {
     "check_total": 0,
     "check_scope": "all",  # all | parcial (solo algunos servicios)
     "check_error": None,
-    "check_queue": None,  # None | "all" | set de carpetas pendientes de recomprobar
+    "check_queue": None,
+    "check_source": None,  # manual | auto | start (última comprobación completa)
+    "check_next": None,  # próxima comprobación automática (timestamp)  # None | "all" | set de carpetas pendientes de recomprobar
     "jobs_scan": 0.0,
 }
 CHECK_TIMEOUT = 900
+
+
+# ── Comprobación automática diaria ────────────────────────────────────
+def parse_check_times(raw: str) -> list[tuple[int, int]]:
+    """``"08:00"`` o ``"08:00,20:30"`` → [(8, 0), (20, 30)]. Vacío u ``off`` = desactivada."""
+    times = set()
+    for part in (raw or "").replace(";", ",").split(","):
+        part = part.strip()
+        if not part or part.lower() in ("off", "no", "false", "0"):
+            continue
+        hh, _, mm = part.partition(":")
+        if hh.isdigit() and (mm or "0").isdigit() and int(hh) < 24 and int(mm or 0) < 60:
+            times.add((int(hh), int(mm or 0)))
+    return sorted(times)
+
+
+def next_check_at(now: datetime, times: list[tuple[int, int]]) -> datetime | None:
+    """Próxima hora programada estrictamente posterior a ``now`` (misma zona horaria)."""
+    if not times:
+        return None
+    for day in (0, 1):
+        base = now + timedelta(days=day)
+        for hh, mm in times:
+            cand = base.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if cand > now:
+                return cand
+    return None
+
+
+def _tz() -> ZoneInfo:
+    try:
+        return ZoneInfo(os.environ.get("TZ") or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
+
+
+CHECK_TIMES = parse_check_times(os.environ.get("CHECK_TIMES", "08:00"))
+CHECK_ON_START = os.environ.get("CHECK_ON_START", "true").lower() not in ("0", "false", "no", "off")
+
+
+async def check_scheduler() -> None:
+    """Lanza la comprobación completa a las horas de CHECK_TIMES (en la zona horaria TZ)."""
+    tz = _tz()
+    while True:
+        nxt = next_check_at(datetime.now(tz), CHECK_TIMES)
+        if nxt is None:
+            return
+        state["check_next"] = nxt.timestamp()
+        # Esperas cortas: tolera cambios de hora y suspensiones del equipo sin desviarse
+        while (remaining := (nxt - datetime.now(tz)).total_seconds()) > 0:
+            await asyncio.sleep(min(remaining, 300))
+        await run_check(source="auto")
 _tasks: set[asyncio.Task] = set()
 
 
@@ -52,7 +108,7 @@ def _spawn(coro) -> None:
     task.add_done_callback(_tasks.discard)
 
 
-async def run_check(services: list[str] | None = None) -> None:
+async def run_check(services: list[str] | None = None, source: str = "manual") -> None:
     """Comprueba actualizaciones en segundo plano (todos o solo ``services``).
 
     update.sh --check-tsv escribe cada servicio en cuanto termina, así que el resultado y el
@@ -96,6 +152,7 @@ async def run_check(services: list[str] | None = None) -> None:
         if services is None and results:
             state["check"] = results  # olvida servicios que ya no existen
             state["check_time"] = time.time()
+            state["check_source"] = source
     except Exception as exc:  # noqa: BLE001 - se muestra en la web
         state["check_error"] = str(getattr(exc, "detail", exc))
     finally:
@@ -114,6 +171,9 @@ def _check_status() -> dict:
         "error": state["check_error"],
         "check": state["check"],
         "check_time": state["check_time"],
+        "check_source": state["check_source"],
+        "check_next": state["check_next"],
+        "check_times": [f"{h:02d}:{m:02d}" for h, m in CHECK_TIMES],
     }
 
 
@@ -155,7 +215,13 @@ async def lifespan(_app: FastAPI):
         state["self_container"] = name
         state["self_image"] = image or os.environ.get("HELPER_IMAGE", "")
         await _reattach_jobs()
+        if CHECK_ON_START:
+            _spawn(run_check(source="start"))
+        if CHECK_TIMES:
+            _spawn(check_scheduler())
     yield
+    for task in list(_tasks):
+        task.cancel()
 
 
 app = FastAPI(title="Dockpanel", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -224,6 +290,8 @@ async def info():
         "self_container": state["self_container"],
         "helper_image": state["self_image"],
         "auth": bool(AUTH_USER and AUTH_PASSWORD),
+        # Se relee en cada consulta: tras un git pull del repo docker el aviso desaparece solo
+        "update_sh_missing": await asyncio.to_thread(host.missing_update_sh_features) if host.DOCKER_DIR else None,
     }
 
 
@@ -237,6 +305,8 @@ async def services():
         "services": items,
         "check_time": state["check_time"],
         "check_running": state["check_running"],
+        "check_source": state["check_source"],
+        "check_next": state["check_next"],
     }
 
 

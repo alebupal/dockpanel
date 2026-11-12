@@ -113,6 +113,21 @@ class HostTests(unittest.TestCase):
         self.assertIn("sha256:1", argv)
         self.assertEqual(argv[-3:], ["/bin/bash", "/srv/docker/update.sh", "x"])
 
+    def test_missing_update_sh_features(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(root + host.DOCKER_DIR)
+            path = root + host.update_sh_path()
+            with mock.patch.object(host, "HOST_ROOT", root):
+                self.assertIsNone(host.missing_update_sh_features())  # sin fichero
+                with open(path, "w") as fh:
+                    fh.write("list_services_tsv() {}\n")
+                self.assertEqual(len(host.missing_update_sh_features()), 2)
+                with open(path, "w") as fh:
+                    fh.write("\n".join(m for m, _ in host.UPDATE_SH_FEATURES))
+                self.assertEqual(host.missing_update_sh_features(), [])
+
     def test_env_passthrough(self):
         with mock.patch.dict(os.environ, {"BACKUP_KEEP_MIN": "5"}):
             self.assertIn("BACKUP_KEEP_MIN=5", host.host_env())
@@ -177,6 +192,33 @@ class CheckTests(unittest.TestCase):
 
         asyncio.run(scenario())
         self.assertEqual(calls, [["a"]])
+
+
+class ScheduleTests(unittest.TestCase):
+    def test_parse_check_times(self):
+        from app.main import parse_check_times
+
+        self.assertEqual(parse_check_times("08:00"), [(8, 0)])
+        self.assertEqual(parse_check_times("20:30, 8:05;8:05"), [(8, 5), (20, 30)])
+        self.assertEqual(parse_check_times("7"), [(7, 0)])
+        for off in ("", "off", "25:00", "aa:bb"):
+            self.assertEqual(parse_check_times(off), [], off)
+
+    def test_next_check_at(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from app.main import next_check_at
+
+        tz = ZoneInfo("Europe/Madrid")
+        times = [(8, 0), (20, 30)]
+        self.assertEqual(next_check_at(datetime(2026, 11, 12, 7, 59, tzinfo=tz), times),
+                         datetime(2026, 11, 12, 8, 0, tzinfo=tz))
+        self.assertEqual(next_check_at(datetime(2026, 11, 12, 8, 0, tzinfo=tz), times),
+                         datetime(2026, 11, 12, 20, 30, tzinfo=tz))
+        self.assertEqual(next_check_at(datetime(2026, 11, 12, 21, 0, tzinfo=tz), times),
+                         datetime(2026, 11, 13, 8, 0, tzinfo=tz))
+        self.assertIsNone(next_check_at(datetime(2026, 11, 12, 21, 0, tzinfo=tz), []))
 
 
 class SessionTests(unittest.TestCase):
