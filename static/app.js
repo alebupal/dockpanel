@@ -128,7 +128,7 @@
       return `<tr data-folder="${esc(s.folder)}"${sel ? ' class="selected"' : ""}>
         <td class="sel"><input type="checkbox" class="sel-chk" aria-label="Seleccionar ${esc(s.name)}"${sel ? " checked" : ""}></td>
         <td><span class="svc-name">${esc(s.name)}</span><span class="svc-badges">${badges.join("")}</span><br>
-            <span class="svc-folder" title="${esc(s.image)}">${esc(s.folder)}${s.image ? " · " + esc(s.image) : ""}</span></td>
+            <span class="svc-folder" title="${esc(s.image)}">${esc(s.folder)}${s.image ? '<span class="svc-img"> · ' + esc(s.image) + "</span>" : ""}</span></td>
         <td><span class="muted">${esc(s.mode)}</span></td>
         <td>${port}</td>
         <td>${statusChip(s.status)}</td>
@@ -136,10 +136,11 @@
           ${toggle}
           <button type="button" class="btn btn-sm" data-svc-action="restart" title="Reiniciar">🔄</button>
           <button type="button" class="btn btn-sm" data-svc-action="update" title="Actualizar (pull + despliegue)">⬇️</button>
-          <button type="button" class="btn btn-sm keep" data-svc-action="logs" title="Ver logs en vivo">📜</button>
+          <button type="button" class="btn btn-sm" data-svc-action="logs" title="Ver logs en vivo">📜</button>
           <span class="more">
             <button type="button" class="btn btn-sm keep" data-more aria-haspopup="true" title="Más acciones">⋯</button>
             <span class="more-menu" role="menu">
+              <span class="more-title">${esc(s.name)}</span>
               <button type="button" role="menuitem" data-svc-action="start">▶ Iniciar</button>
               <button type="button" role="menuitem" data-svc-action="stop">⏹ Detener</button>
               <button type="button" role="menuitem" data-svc-action="restart">🔄 Reiniciar</button>
@@ -368,6 +369,126 @@
   });
 
   // ── Terminales ─────────────────────────────────────────────
+  const mqMobile = window.matchMedia("(max-width: 760px)");
+  const mqCoarse = window.matchMedia("(pointer: coarse)");
+  const termFontSize = () => (mqMobile.matches ? 11 : 13);
+
+  // Hoja a pantalla completa en móvil
+  function openSheet() {
+    if (!mqMobile.matches || !state.terms.size) return;
+    $("#termPanel").classList.add("sheet-open");
+    document.body.classList.add("sheet-lock");
+    updateFab();
+    refitActive();
+  }
+  function closeSheet() {
+    $("#termPanel").classList.remove("sheet-open");
+    document.body.classList.remove("sheet-lock");
+    $("#termText").blur();
+    updateFab();
+  }
+  function updateFab() {
+    const fab = $("#btnTermFab");
+    const n = state.terms.size;
+    const open = $("#termPanel").classList.contains("sheet-open");
+    fab.hidden = !mqMobile.matches || !n || open;
+    $("#fabCount").textContent = n;
+    fab.classList.toggle("running", [...state.terms.values()].some((e) => e.info.running));
+    $("#termPanel").classList.toggle("has-term", n > 0);
+  }
+  function refitActive() {
+    const entry = state.active && state.terms.get(state.active);
+    if (!entry) return;
+    requestAnimationFrame(() => { try { entry.fit.fit(); } catch (e) { /* oculto */ } });
+  }
+  $("#btnTermFab").addEventListener("click", openSheet);
+  $("#btnTermMin").addEventListener("click", closeSheet);
+  mqMobile.addEventListener("change", () => {
+    if (!mqMobile.matches) closeSheet();
+    for (const e of state.terms.values()) e.term.options.fontSize = termFontSize();
+    updateFab();
+    refitActive();
+  });
+
+  // Con el teclado del móvil abierto, la hoja se ajusta al área visible
+  if (window.visualViewport) {
+    const onVV = () => {
+      document.documentElement.style.setProperty("--vvh", `${window.visualViewport.height}px`);
+      if ($("#termPanel").classList.contains("sheet-open")) {
+        $("#termPanel").style.top = `${window.visualViewport.offsetTop}px`;
+        refitActive();
+      }
+    };
+    window.visualViewport.addEventListener("resize", onVV);
+    window.visualViewport.addEventListener("scroll", onVV);
+    onVV();
+  }
+
+  // Envío de texto y teclas rápidas a la terminal activa
+  function sendToActive(data) {
+    const entry = state.active && state.terms.get(state.active);
+    if (!entry || !entry.info.running) { toast("La tarea no está en marcha", true); return false; }
+    if (!entry.ws || entry.ws.readyState !== WebSocket.OPEN) { toast("Reconectando con la terminal…", true); return false; }
+    entry.ws.send(JSON.stringify({ t: "in", d: data }));
+    entry.term.scrollToBottom();
+    return true;
+  }
+  $("#termInput").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const input = $("#termText");
+    if (sendToActive(input.value + "\r")) input.value = "";
+  });
+  document.querySelectorAll("#termInput [data-key]").forEach((b) => {
+    b.addEventListener("click", () => sendToActive(b.dataset.key));
+  });
+  $("#btnTermBottom").addEventListener("click", () => {
+    const entry = state.active && state.terms.get(state.active);
+    if (entry) entry.term.scrollToBottom();
+  });
+
+  // Desplazamiento táctil con inercia (el de xterm.js apenas responde en móvil)
+  function attachTouchScroll(entry) {
+    const el = entry.pane;
+    let lastY = 0, lastT = 0, acc = 0, velocity = 0, raf = 0, moved = false;
+    const lineHeight = () => {
+      const screen = el.querySelector(".xterm-screen");
+      return screen && entry.term.rows ? screen.clientHeight / entry.term.rows : termFontSize() * 1.2;
+    };
+    const scrollBy = (px) => {
+      acc += px;
+      const lh = lineHeight();
+      const lines = Math.trunc(acc / lh);
+      if (lines) { entry.term.scrollLines(lines); acc -= lines * lh; }
+    };
+    el.addEventListener("touchstart", (ev) => {
+      if (ev.touches.length !== 1) return;
+      cancelAnimationFrame(raf);
+      lastY = ev.touches[0].clientY; lastT = performance.now(); velocity = 0; acc = 0; moved = false;
+    }, { passive: true });
+    el.addEventListener("touchmove", (ev) => {
+      if (ev.touches.length !== 1) return;
+      const y = ev.touches[0].clientY, t = performance.now();
+      const dy = lastY - y;
+      if (Math.abs(dy) > 2) moved = true;
+      velocity = dy / Math.max(1, t - lastT);
+      lastY = y; lastT = t;
+      scrollBy(dy);
+      ev.preventDefault();
+      ev.stopPropagation();
+    }, { passive: false, capture: true });
+    el.addEventListener("touchend", () => {
+      if (!moved) return;
+      let v = velocity * 16; // px por fotograma
+      const step = () => {
+        if (Math.abs(v) < 0.5) return;
+        scrollBy(v);
+        v *= 0.94;
+        raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+    }, { passive: true });
+  }
+
   function termSize() {
     const active = state.active && state.terms.get(state.active);
     if (active) return { cols: active.term.cols, rows: active.term.rows };
@@ -382,6 +503,7 @@
     try {
       const info = await api("/api/sessions", { method: "POST", body: { ...body, ...termSize() } });
       openSession(info, true);
+      openSheet();
     } catch (e) {
       toast(e.message, true);
     }
@@ -408,7 +530,7 @@
         convertEol: false,
         cursorBlink: true,
         fontFamily: 'ui-monospace, "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace',
-        fontSize: 13,
+        fontSize: termFontSize(),
         scrollback: 10000,
         theme: termTheme(),
       });
@@ -418,6 +540,7 @@
 
       entry = { term, fit, pane, tab, info, ws: null, closed: false };
       state.terms.set(info.id, entry);
+      attachTouchScroll(entry);
 
       term.onData((d) => {
         if (entry.ws && entry.ws.readyState === WebSocket.OPEN && entry.info.running) {
@@ -438,6 +561,7 @@
     }
     entry.info = info;
     updateTab(entry);
+    updateFab();
     if (activate || !state.active) activateSession(info.id);
   }
 
@@ -477,6 +601,7 @@
     const i = entry.info;
     dot.className = "dot " + (i.running ? "run" : i.exit_code === 0 ? "ok" : "err");
     entry.term.options.disableStdin = !i.running;
+    updateFab();
     if (state.active === i.id) renderStatus(entry);
   }
 
@@ -484,7 +609,9 @@
     const i = entry.info;
     const where = i.container ? ` · contenedor auxiliar ${i.container}` : "";
     $("#termStatus").textContent = i.running
-      ? `En marcha${where}. Escribe en la terminal para responder a las preguntas de update.sh; Ctrl+C interrumpe.`
+      ? (mqCoarse.matches
+        ? `En marcha${where}. Responde con la barra de arriba; desliza para ver el historial.`
+        : `En marcha${where}. Escribe en la terminal o en la barra para responder a update.sh; Ctrl+C interrumpe.`)
       : `Terminada con código ${i.exit_code}${i.exit_code === 0 ? " ✅" : " ❌"} · ${new Date((i.finished || i.created) * 1000).toLocaleTimeString()}`;
   }
 
@@ -500,7 +627,8 @@
     if (!entry) return;
     requestAnimationFrame(() => {
       try { entry.fit.fit(); } catch (e) { /* panel oculto */ }
-      entry.term.focus();
+      // En táctil no se enfoca: abriría el teclado tapando la salida (se responde con la barra)
+      if (!mqCoarse.matches) entry.term.focus();
     });
     renderStatus(entry);
     entry.tab.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -529,8 +657,9 @@
       const next = [...state.terms.keys()].pop();
       state.active = null;
       if (next) activateSession(next);
-      else { $("#termEmpty").hidden = false; $("#termStatus").textContent = ""; }
+      else { $("#termEmpty").hidden = false; $("#termStatus").textContent = ""; closeSheet(); }
     }
+    updateFab();
   }
 
   // Sincroniza pestañas con las sesiones del servidor (otras pestañas del navegador, reconexiones…)

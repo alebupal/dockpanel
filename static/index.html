@@ -14,7 +14,7 @@
   </script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐳</text></svg>">
   <link rel="stylesheet" href="/static/vendor/xterm.css">
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
   <header class="topbar">
@@ -26,7 +26,7 @@
       </div>
     </div>
     <div class="topbar-right">
-      <button type="button" class="btn" data-action="menu" title="Abre el menú interactivo completo de update.sh">⌨️ Menú interactivo</button>
+      <button type="button" class="btn" data-action="menu" title="Abre el menú interactivo completo de update.sh" aria-label="Menú interactivo">⌨️ <span class="lbl">Menú interactivo</span></button>
       <button type="button" class="btn btn-icon" id="btnTheme" aria-label="Tema: automático" title="Tema: automático">🌓</button>
     </div>
   </header>
@@ -82,14 +82,33 @@
       </div>
     </section>
 
-    <section class="panel term-panel" aria-label="Terminal">
-      <div class="term-tabs" id="termTabs" role="tablist"></div>
+    <section class="panel term-panel" id="termPanel" aria-label="Terminal">
+      <div class="term-head">
+        <div class="term-tabs" id="termTabs" role="tablist"></div>
+        <button type="button" class="btn btn-icon term-min" id="btnTermMin" aria-label="Minimizar terminal" title="Minimizar">⌄</button>
+      </div>
       <div class="term-host" id="termHost">
         <div class="term-empty" id="termEmpty">
           <p>Las acciones se ejecutan con <code>update.sh</code> en una terminal real.</p>
           <p class="muted">Si el script pregunta algo (s/N, número de opción…), responde aquí mismo. Las tareas siguen en marcha aunque cierres la página.</p>
         </div>
       </div>
+      <form class="term-input" id="termInput" autocomplete="off">
+        <div class="term-keys" role="group" aria-label="Teclas rápidas">
+          <button type="button" class="btn btn-sm" data-key="&#13;" title="Intro">⏎</button>
+          <button type="button" class="btn btn-sm" data-key="s&#13;" title="Responder s + Intro">s</button>
+          <button type="button" class="btn btn-sm" data-key="n&#13;" title="Responder n + Intro">n</button>
+          <button type="button" class="btn btn-sm" data-key="q&#13;" title="Responder q + Intro">q</button>
+          <button type="button" class="btn btn-sm" data-key="&#3;" title="Interrumpir (Ctrl+C)">Ctrl+C</button>
+          <button type="button" class="btn btn-sm" data-key="&#27;[A" title="Flecha arriba">↑</button>
+          <button type="button" class="btn btn-sm" data-key="&#27;[B" title="Flecha abajo">↓</button>
+          <button type="button" class="btn btn-sm" id="btnTermBottom" title="Ir al final">⤓</button>
+        </div>
+        <div class="term-line">
+          <input type="text" id="termText" placeholder="Respuesta para update.sh…" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Texto a enviar a la terminal">
+          <button type="submit" class="btn btn-primary">Enviar</button>
+        </div>
+      </form>
       <div class="term-status" id="termStatus"></div>
     </section>
   </main>
@@ -120,10 +139,12 @@
     </form>
   </dialog>
 
+  <button type="button" class="term-fab" id="btnTermFab" hidden aria-label="Abrir terminal">🖥️ Terminal <span class="pill" id="fabCount">0</span></button>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="/static/vendor/xterm.js"></script>
   <script src="/static/vendor/addon-fit.js"></script>
-  <script src="/static/app.js?v=3"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>

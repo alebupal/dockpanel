@@ -24,7 +24,11 @@ Panel web sencillo para gestionar los servicios de `docker/` con el **mismo `upd
 | 🛠️ Herramientas | Recursos, nuevo servicio, restaurar, limpieza, ruta base, ayuda | `-m`, `-n [cmd]`, `-r`, `-b`, `--set-user-home`, `--help` |
 | Cabecera | ⌨️ Menú interactivo | `./update.sh` sin argumentos (el menú completo) |
 
-Cada acción abre una pestaña de terminal. Las tareas **no dependen del navegador**: si cierras la página siguen en marcha y al volver aparecen otra vez con su salida. Cerrar con × una tarea en curso la interrumpe (se pide confirmación).
+Cada acción abre una pestaña de terminal. Debajo hay una barra para responder (campo de texto + teclas rápidas ⏎, s, n, q, Ctrl+C, ↑, ↓ e ir al final).
+
+**Móvil:** la terminal se abre a pantalla completa al lanzar una acción y se minimiza a un botón flotante «🖥️ Terminal»; el historial se desplaza deslizando el dedo (con inercia) y se responde con la barra, sin abrir el teclado sobre la salida. Los grupos de botones se desplazan en horizontal y el menú ⋯ de cada servicio aparece como hoja inferior.
+
+ Las tareas **no dependen del navegador**: si cierras la página siguen en marcha y al volver aparecen otra vez con su salida. Cerrar con × una tarea en curso la interrumpe (se pide confirmación).
 
 ## Uso por SSH dentro del contenedor
 
