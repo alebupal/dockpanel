@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Dockpanel · Servicios Docker</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("dockpanel_theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) { /* sin almacenamiento */ }
+    })();
+  </script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐳</text></svg>">
+  <link rel="stylesheet" href="/static/vendor/xterm.css">
+  <link rel="stylesheet" href="/static/style.css?v=2">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">🐳</span>
+      <div>
+        <h1>Dockpanel</h1>
+        <p class="subtitle" id="subtitle">Gestor de servicios Docker · update.sh</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button type="button" class="btn" data-action="menu" title="Abre el menú interactivo completo de update.sh">⌨️ Menú interactivo</button>
+      <button type="button" class="btn btn-icon" id="btnTheme" aria-label="Tema: automático" title="Tema: automático">🌓</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel" aria-labelledby="hServices">
+      <div class="toolbar">
+        <div class="group" role="group" aria-label="Actualizaciones">
+          <span class="group-title">🚀 Actualizaciones</span>
+          <button type="button" class="btn" id="btnCheck">🔍 Comprobar</button>
+          <button type="button" class="btn btn-primary" id="btnUpdateAvailable" disabled>⬇️ Actualizar disponibles <span class="pill" id="updCount">0</span></button>
+          <button type="button" class="btn" data-action="update_all" data-confirm="¿Actualizar TODOS los servicios (pull + despliegue)?">⬇️ Actualizar todos</button>
+          <label class="check"><input type="checkbox" id="chkForce"> Forzar recreación</label>
+        </div>
+        <div class="group" role="group" aria-label="Control de todos los servicios">
+          <span class="group-title">⏯️ Todos</span>
+          <button type="button" class="btn" data-action="start" data-all>▶ Iniciar</button>
+          <button type="button" class="btn" data-action="restart" data-all data-confirm="¿Reiniciar TODOS los servicios?">🔄 Reiniciar</button>
+          <button type="button" class="btn" data-action="recreate" data-all data-confirm="¿Recrear TODOS los servicios (en local, sin descargar)?">🔨 Recrear</button>
+          <button type="button" class="btn btn-danger" data-action="stop" data-all data-confirm="¿Detener TODOS los servicios? Esto incluye este panel si está gestionado por update.sh.">⏹ Detener</button>
+          <button type="button" class="btn" data-policy-all>🔁 Política</button>
+        </div>
+        <div class="group" role="group" aria-label="Diagnóstico y administración">
+          <span class="group-title">🛠️ Herramientas</span>
+          <button type="button" class="btn" data-action="stats">📈 Recursos</button>
+          <button type="button" class="btn" data-action="show">📜 Comandos</button>
+          <button type="button" class="btn" id="btnNew">✨ Nuevo servicio</button>
+          <button type="button" class="btn" data-action="backup" data-all>💾 Backup de todos</button>
+          <button type="button" class="btn" data-action="restore">⏪ Restaurar</button>
+          <button type="button" class="btn" data-action="clean">🧹 Limpieza</button>
+          <button type="button" class="btn" id="btnUserHome">⚙️ Ruta base</button>
+          <button type="button" class="btn" data-action="help">❓ Ayuda</button>
+        </div>
+      </div>
+
+      <div class="list-head">
+        <h2 id="hServices">Servicios <span class="muted" id="svcSummary"></span></h2>
+        <div class="list-tools">
+          <input type="search" id="filter" placeholder="Filtrar…" aria-label="Filtrar servicios">
+          <button type="button" class="btn btn-icon" id="btnRefresh" title="Refrescar estado" aria-label="Refrescar estado">⟳</button>
+        </div>
+      </div>
+      <p class="muted small" id="checkInfo"></p>
+      <div class="table-wrap">
+        <table class="services">
+          <thead>
+            <tr><th>Servicio</th><th>Modo</th><th>Puerto</th><th>Estado</th><th class="actions-col">Acciones</th></tr>
+          </thead>
+          <tbody id="svcBody"><tr><td colspan="5" class="muted">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel term-panel" aria-label="Terminal">
+      <div class="term-tabs" id="termTabs" role="tablist"></div>
+      <div class="term-host" id="termHost">
+        <div class="term-empty" id="termEmpty">
+          <p>Las acciones se ejecutan con <code>update.sh</code> en una terminal real.</p>
+          <p class="muted">Si el script pregunta algo (s/N, número de opción…), responde aquí mismo. Las tareas siguen en marcha aunque cierres la página.</p>
+        </div>
+      </div>
+      <div class="term-status" id="termStatus"></div>
+    </section>
+  </main>
+
+  <dialog id="dlgPolicy">
+    <form method="dialog">
+      <h3>🔁 Política de reinicio <span id="policyTarget" class="muted"></span></h3>
+      <label><input type="radio" name="policy" value="unless-stopped" checked> <b>unless-stopped</b> — recomendado</label>
+      <label><input type="radio" name="policy" value="always"> <b>always</b></label>
+      <label><input type="radio" name="policy" value="on-failure"> <b>on-failure</b></label>
+      <label><input type="radio" name="policy" value="no"> <b>no</b></label>
+      <div class="dlg-actions">
+        <button class="btn" value="cancel">Cancelar</button>
+        <button class="btn btn-primary" value="ok">Aplicar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlgNew">
+    <form method="dialog">
+      <h3>✨ Nuevo servicio</h3>
+      <p class="muted small">Déjalo vacío para el asistente guiado o pega un <code>docker run …</code> para convertirlo. El asistente continúa en la terminal.</p>
+      <textarea id="newRunCmd" rows="4" placeholder="docker run -d -p 8080:80 --name mi_app nginx:alpine"></textarea>
+      <div class="dlg-actions">
+        <button class="btn" value="cancel">Cancelar</button>
+        <button class="btn btn-primary" value="ok">Continuar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/static/vendor/xterm.js"></script>
+  <script src="/static/vendor/addon-fit.js"></script>
+  <script src="/static/app.js?v=1"></script>
+</body>
+</html>
