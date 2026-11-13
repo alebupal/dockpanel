@@ -19,6 +19,14 @@
     return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  // Enlace de un puerto: a la IP del servidor (no al dominio del proxy por el que se abre el panel)
+  function portUrl(port) {
+    const host = state.info.port_link_host || location.hostname;
+    const scheme = state.info.port_link_scheme || "http";
+    const h = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+    return `${scheme}://${h}:${port}`;
+  }
+
   let toastTimer;
   function toast(msg, isError = false) {
     const el = $("#toast");
@@ -135,7 +143,7 @@
       if (s.update === "error") badges.push('<span class="chip chip-err" title="No se pudo comprobar">? comprobación</span>');
       if (s.is_self) badges.push('<span class="chip chip-info" title="Este panel">este panel</span>');
       const port = s.port
-        ? `<a href="${location.protocol}//${esc(location.hostname)}:${esc(s.port)}" target="_blank" rel="noopener">:${esc(s.port)}</a>`
+        ? `<a href="${esc(portUrl(s.port))}" target="_blank" rel="noopener">:${esc(s.port)}</a>`
         : '<span class="muted">-</span>';
       const toggle = s.status === "RUNNING"
         ? `<button type="button" class="btn btn-sm btn-danger keep" data-svc-action="stop" title="Detener">⏹</button>`
@@ -759,6 +767,7 @@
   applyTheme(currentTheme());
   api("/api/info").then((info) => {
     state.info = info;
+    if (state.services.length) renderServices(); // enlaces de puerto con la IP del servidor
     if (info.docker_dir) $("#subtitle").textContent = `Gestor de servicios Docker · ${info.docker_dir}/update.sh`;
     const missing = info.update_sh_missing || [];
     const notice = $("#shNotice");

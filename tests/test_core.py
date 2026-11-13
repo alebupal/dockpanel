@@ -221,6 +221,18 @@ class ScheduleTests(unittest.TestCase):
         self.assertIsNone(next_check_at(datetime(2026, 11, 12, 21, 0, tzinfo=tz), []))
 
 
+class PortLinkTests(unittest.TestCase):
+    def test_override_wins(self):
+        from app import main
+        with mock.patch.object(main, "PORT_LINK_HOST", "192.168.5.10"):
+            self.assertEqual(main.port_link_host(), "192.168.5.10")
+
+    def test_autodetect_ignores_loopback(self):
+        from app import main
+        ip = main.detect_lan_ip()
+        self.assertFalse(ip.startswith("127."))
+
+
 class SessionTests(unittest.TestCase):
     def test_pty_session_output_and_exit(self):
         async def scenario():

@@ -94,6 +94,8 @@ Abre `http://<servidor>:8092`.
 | `SELF_CONTAINER` | `dockpanel` | Nombre del contenedor del panel (para detectar su imagen y marcarlo como «este panel»). |
 | `HELPER_IMAGE` | imagen del propio contenedor | Imagen para los auxiliares si no se puede detectar. |
 | `AUTH_USER` / `AUTH_PASSWORD` | vacías | Activan autenticación HTTP Basic en toda la web. |
+| `PORT_LINK_HOST` | IP LAN del servidor (autodetectada) | Host de los enlaces de la columna Puerto. Así no apuntan al dominio del proxy (`https://dockpanel.midominio.org:8080`), donde ese puerto no existe. Ponlo si la IP detectada no es la buena. |
+| `PORT_LINK_SCHEME` | `http` | Protocolo de esos enlaces. |
 | `HOST_HOME` | `/root` | `HOME` con el que se ejecuta `update.sh` en el host. |
 | `MAX_RUNNING_JOBS` | `6` | Tareas simultáneas máximas. |
 | `CHECK_TIMES` | `08:00` | Horas de la comprobación automática diaria de actualizaciones (`HH:MM`, varias separadas por comas; vacío u `off` la desactiva). Usa la zona horaria `TZ`. El resultado queda marcado en la web. |

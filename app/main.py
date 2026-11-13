@@ -29,6 +29,10 @@ VERSION = "1.0.0"
 AUTH_USER = os.environ.get("AUTH_USER", "")
 AUTH_PASSWORD = os.environ.get("AUTH_PASSWORD", "")
 MAX_RUNNING = int(os.environ.get("MAX_RUNNING_JOBS", "6"))
+# Host de los enlaces de puerto. Vacío = IP LAN del servidor (se detecta sola con --network host),
+# para que no apunten al dominio del proxy (p. ej. dockpanel.midominio.org:8080, que no existe).
+PORT_LINK_HOST = os.environ.get("PORT_LINK_HOST", "").strip()
+PORT_LINK_SCHEME = os.environ.get("PORT_LINK_SCHEME", "http").strip() or "http"
 
 manager = SessionManager()
 state: dict = {
@@ -262,6 +266,22 @@ async def security(request: Request, call_next):
 
 
 # ── Utilidades ────────────────────────────────────────────────────────
+def detect_lan_ip() -> str:
+    """IP de la interfaz con la ruta por defecto (no envía nada: UDP connect solo elige origen)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 9))
+            ip = sock.getsockname()[0]
+            return "" if ip.startswith("127.") else ip
+    except OSError:
+        return ""
+
+
+def port_link_host() -> str:
+    return PORT_LINK_HOST or detect_lan_ip()
+
+
 def _require_docker_dir() -> None:
     if not host.DOCKER_DIR:
         raise HTTPException(500, "DOCKER_DIR no está definido en el contenedor")
@@ -290,6 +310,8 @@ async def info():
         "self_container": state["self_container"],
         "helper_image": state["self_image"],
         "auth": bool(AUTH_USER and AUTH_PASSWORD),
+        "port_link_host": port_link_host(),
+        "port_link_scheme": PORT_LINK_SCHEME,
         # Se relee en cada consulta: tras un git pull del repo docker el aviso desaparece solo
         "update_sh_missing": await asyncio.to_thread(host.missing_update_sh_features) if host.DOCKER_DIR else None,
     }
