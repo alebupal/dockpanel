@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+# Imagen oficial de Docker Hub servida desde el espejo de AWS: no gasta el límite de descargas de Docker Hub
+FROM public.ecr.aws/docker/library/python:3.12-slim
 
 # El panel no incluye Docker: ejecuta update.sh y el docker CLI del host mediante
 # 'chroot /host' (la raíz del host montada en /host). Solo necesita Python y coreutils.
