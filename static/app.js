@@ -169,6 +169,7 @@
               <button type="button" role="menuitem" data-svc-action="stop">⏹ Detener</button>
               <button type="button" role="menuitem" data-svc-action="restart">🔄 Reiniciar</button>
               <button type="button" role="menuitem" data-svc-action="recreate">🔨 Recrear (sin descargar)</button>
+              <button type="button" role="menuitem" data-svc-action="check">🔍 Comprobar actualización</button>
               <button type="button" role="menuitem" data-svc-action="update">⬇️ Actualizar</button>
               <button type="button" role="menuitem" data-svc-action="update_force">⏬ Actualizar forzando recreación</button>
               <button type="button" role="menuitem" data-svc-action="backup">💾 Crear backup</button>
@@ -192,7 +193,7 @@
       const total = c && c.total ? c.total : 0;
       const pct = total ? Math.round((done / total) * 100) : 0;
       const label = c && c.scope === "partial"
-        ? `🔍 Recomprobando ${total} servicio(s) tras la última tarea…`
+        ? `🔍 Comprobando ${total} servicio(s)…`
         : "🔍 Comprobando actualizaciones…";
       el.innerHTML = `<span class="check-label">${label} <b>${done}/${total || "?"}</b></span>
         <span class="progress${done ? "" : " indeterminate"}" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${pct}%"></span></span>`;
@@ -233,6 +234,16 @@
         if (!c.running) {
           checkWatcher = null;
           if (c.error) toast(c.error, true);
+          else if (state.checkAsked) {
+            const label = { update: "⬆ actualización disponible", ok: "al día", error: "no se pudo comprobar" };
+            const parts = state.checkAsked.map((f) => {
+              const s = state.services.find((x) => x.folder === f);
+              return `${s ? s.name : f}: ${label[c.check[f]] || "sin resultado"}`;
+            });
+            toast(parts.length > 3 ? `Comprobados ${parts.length} servicios` : parts.join(" · "),
+              state.checkAsked.some((f) => c.check[f] === "error"));
+          }
+          state.checkAsked = null;
           loadServices();
           return;
         }
@@ -244,6 +255,19 @@
 
   $("#filter").addEventListener("input", renderServices);
   $("#btnRefresh").addEventListener("click", loadServices);
+
+  // Comprueba solo los servicios indicados (menú ⋯ de la fila o lote con selección)
+  async function checkServices(folders) {
+    try {
+      state.checkAsked = folders;
+      for (const s of state.services) if (folders.includes(s.folder)) s.update = null;
+      applyCheck(await api("/api/check", { method: "POST", body: { services: folders } }));
+      watchCheck();
+    } catch (e) {
+      state.checkAsked = null;
+      toast(e.message, true);
+    }
+  }
 
   $("#btnCheck").addEventListener("click", async () => {
     try {
@@ -319,6 +343,7 @@
     const sel = selectedServices();
     // Solo consulta: sin confirmación (sin selección = todos)
     if (op === "show") return runAction({ action: "show", services: sel.map((s) => s.folder) });
+    if (op === "check") return sel.length ? checkServices(sel.map((s) => s.folder)) : $("#btnCheck").click();
     const force = $("#chkForce").checked;
     const verbs = {
       start: "Iniciar", stop: "Detener", restart: "Reiniciar", recreate: "Recrear (en local, sin descargar)",
@@ -371,6 +396,7 @@
     closeMenus();
     const folder = btn.closest("tr").dataset.folder;
     const svc = state.services.find((s) => s.folder === folder);
+    if (svc && btn.dataset.svcAction === "check") return checkServices([svc.folder]);
     if (svc) serviceAction(svc, btn.dataset.svcAction);
   });
   function closeMenus() { document.querySelectorAll(".more.open").forEach((m) => m.classList.remove("open")); }

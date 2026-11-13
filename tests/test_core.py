@@ -194,6 +194,58 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(calls, [["a"]])
 
 
+class CheckApiTests(unittest.TestCase):
+    def setUp(self):
+        from fastapi.testclient import TestClient
+
+        from app import main
+
+        self.main = main
+        self.client = TestClient(main.app)
+        self.calls = []
+
+        async def fake_check(services=None, source="manual"):
+            self.calls.append(services)
+
+        async def fake_list():
+            return [{"folder": "portainer"}, {"folder": "immich-app"}]
+
+        self.patches = [
+            mock.patch.object(main, "run_check", fake_check),
+            mock.patch.object(main, "_list_services", fake_list),
+            mock.patch.object(main.host, "DOCKER_DIR", "/srv/docker"),
+        ]
+        for p in self.patches:
+            p.start()
+        main.state["check_running"] = False
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+
+    def post(self, body):
+        return self.client.post("/api/check", json=body, headers={"X-Dockpanel": "1"})
+
+    def test_single_service(self):
+        self.assertEqual(self.post({"services": ["portainer"]}).status_code, 200)
+        self.assertEqual(self.calls, [["portainer"]])
+
+    def test_all_without_services(self):
+        self.assertEqual(self.post({}).status_code, 200)
+        self.assertEqual(self.calls, [None])
+
+    def test_unknown_service_rejected(self):
+        res = self.post({"services": ["portainer", "nope"]})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("nope", res.json()["detail"])
+        self.assertEqual(self.calls, [])
+
+    def test_single_service_while_running_is_queued(self):
+        self.main.state["check_running"] = True
+        self.assertEqual(self.post({"services": ["immich-app"]}).status_code, 200)
+        self.assertEqual(self.calls, [["immich-app"]])  # run_check lo encola
+
+
 class ScheduleTests(unittest.TestCase):
     def test_parse_check_times(self):
         from app.main import parse_check_times

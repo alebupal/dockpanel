@@ -333,10 +333,27 @@ async def services():
 
 
 @app.post("/api/check")
-async def check():
-    """Lanza la comprobación en segundo plano; el progreso se consulta con GET /api/check."""
+async def check(request: Request):
+    """Lanza la comprobación en segundo plano; el progreso se consulta con GET /api/check.
+
+    Cuerpo opcional ``{"services": ["carpeta", ...]}``: comprueba solo esos servicios (si ya hay
+    una comprobación en marcha, se encolan y se comprueban al terminar)."""
     _require_docker_dir()
-    if not state["check_running"]:
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 - sin cuerpo = todos
+        body = {}
+    services = body.get("services") if isinstance(body, dict) else None
+    if services:
+        if not isinstance(services, list) or not all(isinstance(s, str) for s in services):
+            raise HTTPException(400, "services debe ser una lista de carpetas")
+        known = {s["folder"] for s in await _list_services()}
+        unknown = sorted(set(services) - known)
+        if unknown:
+            raise HTTPException(400, f"Servicio desconocido: {', '.join(unknown)}")
+        _spawn(run_check(sorted(set(services))))
+        await asyncio.sleep(0)
+    elif not state["check_running"]:
         _spawn(run_check())
         await asyncio.sleep(0)  # deja arrancar la tarea: la respuesta ya sale con running=True
     return _check_status()
