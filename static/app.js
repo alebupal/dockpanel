@@ -105,6 +105,7 @@
       state.checkTime = data.check_time;
       state.checkSource = data.check_source;
       state.checkNext = data.check_next;
+      state.autoCheck = data.auto_check !== false;
       renderServices();
       renderCheckInfo();
       if (data.check_running) watchCheck();
@@ -187,7 +188,8 @@
     const el = $("#checkInfo");
     const c = state.check;
     const btn = $("#btnCheck");
-    btn.disabled = state.checkRunning;
+    btn.disabled = false;
+    btn.classList.toggle("btn-danger", state.checkRunning);
     if (state.checkRunning) {
       const done = c ? c.done : 0;
       const total = c && c.total ? c.total : 0;
@@ -197,19 +199,33 @@
         : "🔍 Comprobando actualizaciones…";
       el.innerHTML = `<span class="check-label">${label} <b>${done}/${total || "?"}</b></span>
         <span class="progress${done ? "" : " indeterminate"}" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${pct}%"></span></span>`;
-      btn.innerHTML = `🔍 Comprobando ${done ? pct + "%" : "…"}`;
+      btn.textContent = `⏹ Cancelar ${done ? pct + "%" : "…"}`;
+      btn.title = "Cancelar la comprobación en curso";
       return;
     }
     btn.textContent = "🔍 Comprobar";
+    btn.title = "Comprobar si hay imagen nueva de todos los servicios";
     if (c && c.error) { el.textContent = `⚠️ ${c.error}`; return; }
     const ts = state.checkTime;
-    const next = state.checkNext ? ` · Próxima automática: ${whenLabel(state.checkNext)}.` : "";
+    renderAutoToggle();
+    const next = !state.autoCheck
+      ? " · Comprobación automática desactivada."
+      : state.checkNext ? ` · Próxima automática: ${whenLabel(state.checkNext)}.` : "";
     if (ts) {
       const n = state.services.filter((s) => s.update === "update").length;
       const kind = { auto: "automática", start: "al arrancar el panel" }[state.checkSource];
       const what = kind ? `Comprobación ${kind} ${whenLabel(ts)}` : `Última comprobación ${timeAgo(ts)}`;
       el.textContent = `${what}: ${n ? n + " con actualización disponible" : "todo al día"}.${next}`;
     } else el.textContent = `Pulsa «Comprobar» para ver qué servicios tienen imagen nueva.${next}`;
+  }
+
+  function renderAutoToggle() {
+    const b = $("#btnAutoCheck");
+    b.textContent = state.autoCheck ? "⏰ Comprobación automática ✅" : "⏰ Comprobación automática ⛔";
+    b.title = state.autoCheck
+      ? "Activada: al arrancar, a las horas programadas y tras cada tarea. Pulsa para desactivarla."
+      : "Desactivada: solo se comprueba a mano. Pulsa para activarla.";
+    b.setAttribute("aria-checked", String(state.autoCheck));
   }
 
   // Aplica el estado de la comprobación (resultados parciales incluidos) a la tabla
@@ -219,6 +235,7 @@
     state.checkTime = c.check_time;
     state.checkSource = c.check_source;
     state.checkNext = c.check_next;
+    state.autoCheck = c.auto_check !== false;
     for (const s of state.services) s.update = c.check[s.folder] || null;
     renderServices();
     renderCheckInfo();
@@ -233,7 +250,8 @@
         applyCheck(c);
         if (!c.running) {
           checkWatcher = null;
-          if (c.error) toast(c.error, true);
+          if (c.cancelled) toast("Comprobación cancelada");
+          else if (c.error) toast(c.error, true);
           else if (state.checkAsked) {
             const label = { update: "⬆ actualización disponible", ok: "al día", error: "no se pudo comprobar" };
             const parts = state.checkAsked.map((f) => {
@@ -271,8 +289,24 @@
 
   $("#btnCheck").addEventListener("click", async () => {
     try {
+      if (state.checkRunning) {
+        applyCheck(await api("/api/check", { method: "DELETE" }));
+        watchCheck();
+        return;
+      }
       applyCheck(await api("/api/check", { method: "POST", body: {} }));
       watchCheck();
+    } catch (e) {
+      toast(e.message, true);
+    }
+  });
+
+  $("#btnAutoCheck").addEventListener("click", async () => {
+    const enable = !state.autoCheck;
+    if (!enable && !confirm("¿Desactivar la comprobación automática?\n\nNo se comprobará al arrancar el panel, a las horas programadas ni después de cada tarea. Podrás seguir comprobando a mano.")) return;
+    try {
+      applyCheck(await api("/api/check/auto", { method: "PUT", body: { enabled: enable } }));
+      toast(enable ? "Comprobación automática activada" : "Comprobación automática desactivada");
     } catch (e) {
       toast(e.message, true);
     }
@@ -294,17 +328,16 @@
 
   function updateSelectionUI() {
     const n = state.selected.size;
-    const title = $("#batchTitle");
-    title.textContent = n ? `☑️ Selección (${n})` : "⏯️ Todos";
-    title.classList.toggle("has-sel", n > 0);
+    // La barra de acciones sobre la selección solo aparece si hay algo marcado
+    $("#selBar").hidden = n === 0;
+    $("#batchTitle").textContent = `☑️ ${n} seleccionado${n === 1 ? "" : "s"}`;
     const visible = state.visible || [];
     const visSel = visible.filter((f) => state.selected.has(f)).length;
     const chkAll = $("#chkAll");
     chkAll.checked = visible.length > 0 && visSel === visible.length;
     chkAll.indeterminate = visSel > 0 && visSel < visible.length;
-    $("#btnSelectAll").textContent = n ? "✖ Quitar selección" : "☑️ Seleccionar todos";
     document.querySelectorAll("[data-batch]").forEach((b) => {
-      b.title = n ? `Aplicar a los ${n} servicio(s) seleccionados` : "Aplicar a TODOS los servicios";
+      b.title = `Aplicar a los ${n} servicio(s) seleccionados`;
     });
   }
 
@@ -332,15 +365,33 @@
   });
 
   $("#btnSelectAll").addEventListener("click", () => {
-    if (state.selected.size) for (const f of [...state.selected]) setSelected(f, false);
-    else for (const f of state.visible || []) setSelected(f, true);
+    for (const f of state.visible || []) setSelected(f, true);
+    updateSelectionUI();
+  });
+  $("#btnClearSel").addEventListener("click", () => {
+    for (const f of [...state.selected]) setSelected(f, false);
     updateSelectionUI();
   });
 
   document.querySelectorAll("[data-batch]").forEach((btn) => btn.addEventListener("click", () => batchAction(btn.dataset.batch)));
+  // Menú «Todos ▾»: siempre sobre todos los servicios, haya o no selección
+  document.querySelectorAll("[data-batch-all]").forEach((btn) => btn.addEventListener("click", () => batchAction(btn.dataset.batchAll, true)));
 
-  function batchAction(op) {
-    const sel = selectedServices();
+  // Desplegables de la barra superior (Todos, Herramientas)
+  document.querySelectorAll("[data-drop]").forEach((btn) => btn.addEventListener("click", (ev) => {
+    const wrap = btn.parentElement;
+    const open = !wrap.classList.contains("open");
+    closeMenus();
+    wrap.classList.toggle("open", open);
+    btn.setAttribute("aria-expanded", String(open));
+    // Se abre hacia el lado con sitio (la barra cambia de forma según el ancho)
+    wrap.classList.remove("align-left");
+    if (open && $(".more-menu", wrap).getBoundingClientRect().left < 8) wrap.classList.add("align-left");
+    ev.stopPropagation();
+  }));
+
+  function batchAction(op, all = false) {
+    const sel = all ? [] : selectedServices();
     // Solo consulta: sin confirmación (sin selección = todos)
     if (op === "show") return runAction({ action: "show", services: sel.map((s) => s.folder) });
     if (op === "check") return sel.length ? checkServices(sel.map((s) => s.folder)) : $("#btnCheck").click();
@@ -399,8 +450,12 @@
     if (svc && btn.dataset.svcAction === "check") return checkServices([svc.folder]);
     if (svc) serviceAction(svc, btn.dataset.svcAction);
   });
-  function closeMenus() { document.querySelectorAll(".more.open").forEach((m) => m.classList.remove("open")); }
+  function closeMenus() {
+    document.querySelectorAll(".more.open").forEach((m) => m.classList.remove("open"));
+    document.querySelectorAll("[data-drop]").forEach((b) => b.setAttribute("aria-expanded", "false"));
+  }
   document.addEventListener("click", closeMenus);
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeMenus(); });
 
   function serviceAction(svc, act) {
     const selfNote = svc.is_self ? "\n\nEs este panel: se reiniciará y la tarea seguirá en segundo plano; recarga la página en unos segundos." : "";

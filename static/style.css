@@ -168,6 +168,15 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; 
 }
 
 .toolbar { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.bar-main { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.bar-menus { display: flex; gap: 6px; }
+.selbar { padding: 8px 10px; border-radius: 8px; background: var(--info-bg); }
+.selbar[hidden] { display: none; }
+.selbar .group-title { width: auto; margin-right: 4px; }
+.drop .more-menu { white-space: nowrap; }
+.drop.align-left .more-menu { right: auto; left: 0; }
+.menu-sep { display: block; height: 1px; margin: 4px 6px; background: var(--border); }
+.more-menu button.danger { color: var(--err-fg); }
 .group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .group-title { font-size: 12px; font-weight: 600; color: var(--muted); width: 112px; flex-shrink: 0; }
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
@@ -491,6 +500,10 @@ dialog textarea {
   .group::-webkit-scrollbar { display: none; }
   .group .btn, .group .check { flex-shrink: 0; }
   .group-title { width: auto; flex-shrink: 0; font-size: 11.5px; }
+  .selbar { margin: 0; padding: 8px; }
+  .bar-main { flex-direction: column; align-items: stretch; }
+  .bar-menus .drop { flex: 1; }
+  .bar-menus .drop > .btn { width: 100%; }
   input, textarea, select { font-size: 16px !important; } /* evita el zoom de iOS al enfocar */
   #filter { width: 130px; }
   .services th:nth-child(3), .services td:nth-child(3),

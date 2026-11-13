@@ -13,7 +13,7 @@
     })();
   </script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐳</text></svg>">
-  <link rel="stylesheet" href="/static/vendor/xterm.css">
+  <link rel="stylesheet" href="/static/vendor/xterm.css?v=">
   <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
@@ -34,16 +34,48 @@
   <main class="layout">
     <section class="panel" aria-labelledby="hServices">
       <div class="toolbar">
-        <div class="group" role="group" aria-label="Actualizaciones">
-          <span class="group-title">🚀 Actualizaciones</span>
-          <button type="button" class="btn" id="btnCheck">🔍 Comprobar</button>
-          <button type="button" class="btn btn-primary" id="btnUpdateAvailable" disabled>⬇️ Actualizar disponibles <span class="pill" id="updCount">0</span></button>
-          <button type="button" class="btn" data-action="update_all" data-confirm="¿Actualizar TODOS los servicios (pull + despliegue)?">⬇️ Actualizar todos</button>
-          <label class="check"><input type="checkbox" id="chkForce"> Forzar recreación</label>
+        <div class="bar-main">
+          <div class="group" role="group" aria-label="Actualizaciones">
+            <button type="button" class="btn" id="btnCheck">🔍 Comprobar</button>
+            <button type="button" class="btn btn-primary" id="btnUpdateAvailable" disabled>⬇️ Actualizar disponibles <span class="pill" id="updCount">0</span></button>
+            <label class="check" title="Al actualizar, recrea el contenedor aunque la imagen no haya cambiado"><input type="checkbox" id="chkForce"> Forzar recreación</label>
+          </div>
+          <div class="bar-menus">
+            <span class="more drop">
+              <button type="button" class="btn" data-drop aria-haspopup="menu" aria-expanded="false">⏯️ Todos ▾</button>
+              <span class="more-menu" role="menu" aria-label="Acciones sobre todos los servicios">
+                <span class="more-title">Todos los servicios</span>
+                <button type="button" role="menuitem" data-batch-all="start">▶ Iniciar todos</button>
+                <button type="button" role="menuitem" data-batch-all="restart">🔄 Reiniciar todos</button>
+                <button type="button" role="menuitem" data-batch-all="recreate">🔨 Recrear todos</button>
+                <button type="button" role="menuitem" data-batch-all="stop" class="danger">⏹ Detener todos</button>
+                <span class="menu-sep" role="separator"></span>
+                <button type="button" role="menuitem" data-batch-all="update">⬇️ Actualizar todos</button>
+                <button type="button" role="menuitem" data-batch-all="backup">💾 Backup de todos</button>
+                <button type="button" role="menuitem" data-batch-all="policy">🔁 Política de reinicio</button>
+                <button type="button" role="menuitem" data-batch-all="show">📜 Comandos de arranque</button>
+                <span class="menu-sep" role="separator"></span>
+                <button type="button" role="menuitem" id="btnSelectAll">☑️ Seleccionar todos (visibles)</button>
+              </span>
+            </span>
+            <span class="more drop">
+              <button type="button" class="btn" data-drop aria-haspopup="menu" aria-expanded="false">🛠️ Herramientas ▾</button>
+              <span class="more-menu" role="menu" aria-label="Herramientas">
+                <span class="more-title">Herramientas</span>
+                <button type="button" role="menuitem" data-action="stats">📈 Recursos</button>
+                <button type="button" role="menuitem" id="btnNew">✨ Nuevo servicio</button>
+                <button type="button" role="menuitem" data-action="restore">⏪ Restaurar backup</button>
+                <button type="button" role="menuitem" data-action="clean">🧹 Limpieza</button>
+                <button type="button" role="menuitem" id="btnUserHome">⚙️ Ruta base</button>
+                <button type="button" role="menuitemcheckbox" aria-checked="true" id="btnAutoCheck">⏰ Comprobación automática ✅</button>
+                <span class="menu-sep" role="separator"></span>
+                <button type="button" role="menuitem" data-action="help">❓ Ayuda de update.sh</button>
+              </span>
+            </span>
+          </div>
         </div>
-        <div class="group" role="group" aria-label="Acciones en lote">
-          <span class="group-title" id="batchTitle">⏯️ Todos</span>
-          <button type="button" class="btn" id="btnSelectAll">☑️ Seleccionar todos</button>
+        <div class="group selbar" id="selBar" role="group" aria-label="Acciones sobre la selección" hidden>
+          <span class="group-title has-sel" id="batchTitle">☑️ 0 seleccionados</span>
           <button type="button" class="btn" data-batch="start">▶ Iniciar</button>
           <button type="button" class="btn" data-batch="restart">🔄 Reiniciar</button>
           <button type="button" class="btn" data-batch="recreate">🔨 Recrear</button>
@@ -52,16 +84,8 @@
           <button type="button" class="btn" data-batch="update">⬇️ Actualizar</button>
           <button type="button" class="btn" data-batch="backup">💾 Backup</button>
           <button type="button" class="btn" data-batch="policy">🔁 Política</button>
-          <button type="button" class="btn" data-batch="show">📜 Comando de arranque</button>
-        </div>
-        <div class="group" role="group" aria-label="Diagnóstico y administración">
-          <span class="group-title">🛠️ Herramientas</span>
-          <button type="button" class="btn" data-action="stats">📈 Recursos</button>
-          <button type="button" class="btn" id="btnNew">✨ Nuevo servicio</button>
-          <button type="button" class="btn" data-action="restore">⏪ Restaurar</button>
-          <button type="button" class="btn" data-action="clean">🧹 Limpieza</button>
-          <button type="button" class="btn" id="btnUserHome">⚙️ Ruta base</button>
-          <button type="button" class="btn" data-action="help">❓ Ayuda</button>
+          <button type="button" class="btn" data-batch="show">📜 Comando</button>
+          <button type="button" class="btn" id="btnClearSel">✖ Quitar selección</button>
         </div>
       </div>
 
@@ -145,8 +169,8 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="/static/vendor/xterm.js"></script>
-  <script src="/static/vendor/addon-fit.js"></script>
+  <script src="/static/vendor/xterm.js?v="></script>
+  <script src="/static/vendor/addon-fit.js?v="></script>
   <script src="/static/app.js?v=10"></script>
 </body>
 </html>

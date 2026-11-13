@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import os
+import signal
 import secrets
 import time
 from datetime import datetime, timedelta
@@ -46,6 +47,11 @@ state: dict = {
     "check_scope": "all",  # all | parcial (solo algunos servicios)
     "check_error": None,
     "check_queue": None,
+    "check_proc": None,  # proceso de la comprobación en curso (para poder cancelarla)
+    "check_cancelled": False,
+    # Comprobaciones automáticas (programada, al arrancar y tras cada tarea). Se desactivan
+    # desde la web para no agotar el límite de peticiones del registro (p. ej. Docker Hub).
+    "auto_check": True,
     "check_source": None,  # manual | auto | start (última comprobación completa)
     "check_next": None,  # próxima comprobación automática (timestamp)  # None | "all" | set de carpetas pendientes de recomprobar
     "jobs_scan": 0.0,
@@ -91,6 +97,32 @@ CHECK_TIMES = parse_check_times(os.environ.get("CHECK_TIMES", "08:00"))
 CHECK_ON_START = os.environ.get("CHECK_ON_START", "true").lower() not in ("0", "false", "no", "off")
 
 
+# ── Ajustes guardados desde la web (docker/dockpanel/settings.json, no se versiona) ──
+def settings_path() -> str:
+    return f"{host.HOST_ROOT}{host.DOCKER_DIR}/dockpanel/settings.json" if host.DOCKER_DIR else ""
+
+
+def load_settings() -> dict:
+    path = settings_path()
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(data: dict) -> None:
+    path = settings_path()
+    if not path:
+        raise HTTPException(500, "DOCKER_DIR no está definido en el contenedor")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+    os.replace(tmp, path)
+
+
 async def check_scheduler() -> None:
     """Lanza la comprobación completa a las horas de CHECK_TIMES (en la zona horaria TZ)."""
     tz = _tz()
@@ -102,7 +134,10 @@ async def check_scheduler() -> None:
         # Esperas cortas: tolera cambios de hora y suspensiones del equipo sin desviarse
         while (remaining := (nxt - datetime.now(tz)).total_seconds()) > 0:
             await asyncio.sleep(min(remaining, 300))
-        await run_check(source="auto")
+        if state["auto_check"]:
+            await run_check(source="auto")
+        else:
+            await asyncio.sleep(1)  # no repetir la misma hora
 _tasks: set[asyncio.Task] = set()
 
 
@@ -126,14 +161,17 @@ async def run_check(services: list[str] | None = None, source: str = "manual") -
         else:
             state["check_queue"] = set(queued or ()) | set(services)
         return
-    state.update(check_running=True, check_done=0, check_error=None,
+    state.update(check_running=True, check_done=0, check_error=None, check_cancelled=False,
                  check_scope="all" if services is None else "partial")
     try:
         state["check_total"] = len(services) if services is not None else len(await _list_services())
         argv = host.on_host(host.update_sh_argv(["--check-tsv", *(services or [])]))
+        # Grupo de procesos propio: al cancelar se paran también los hijos de update.sh
         proc = await asyncio.create_subprocess_exec(
-            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
+        state["check_proc"] = proc
         results: dict[str, str] = {}
 
         async def read_lines() -> None:
@@ -147,13 +185,15 @@ async def run_check(services: list[str] | None = None, source: str = "manual") -
         try:
             await asyncio.wait_for(read_lines(), CHECK_TIMEOUT)
         except asyncio.TimeoutError:
-            proc.kill()
+            _kill_check(proc)
             state["check_error"] = "La comprobación ha superado el tiempo máximo"
         stderr = (await proc.stderr.read()).decode("utf-8", "replace")
         rc = await proc.wait()
-        if rc != 0 and not results and not state["check_error"]:
+        if state["check_cancelled"]:
+            pass  # los resultados que ya llegaron se quedan; no cuenta como comprobación completa
+        elif rc != 0 and not results and not state["check_error"]:
             state["check_error"] = stderr.strip()[-500:] or f"update.sh --check-tsv ha fallado ({rc})"
-        if services is None and results:
+        if services is None and results and not state["check_cancelled"]:
             state["check"] = results  # olvida servicios que ya no existen
             state["check_time"] = time.time()
             state["check_source"] = source
@@ -161,14 +201,26 @@ async def run_check(services: list[str] | None = None, source: str = "manual") -
         state["check_error"] = str(getattr(exc, "detail", exc))
     finally:
         state["check_running"] = False
+        state["check_proc"] = None
         queued, state["check_queue"] = state["check_queue"], None
         if queued:
             _spawn(run_check(None if queued == "all" else sorted(queued)))
 
 
+def _kill_check(proc) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+
+
 def _check_status() -> dict:
     return {
         "running": state["check_running"],
+        "cancelled": state["check_cancelled"],
         "done": state["check_done"],
         "total": state["check_total"],
         "scope": state["check_scope"],
@@ -176,8 +228,9 @@ def _check_status() -> dict:
         "check": state["check"],
         "check_time": state["check_time"],
         "check_source": state["check_source"],
-        "check_next": state["check_next"],
+        "check_next": state["check_next"] if state["auto_check"] else None,
         "check_times": [f"{h:02d}:{m:02d}" for h, m in CHECK_TIMES],
+        "auto_check": state["auto_check"],
     }
 
 
@@ -185,8 +238,8 @@ def _on_session_finished(session) -> None:
     """Tras una tarea que ha podido cambiar imágenes (web, menú o SSH), se recomprueban los
     servicios que estaban marcados con actualización pendiente: así desaparece el aviso de los
     que ya se han actualizado y se mantiene el de los que han fallado."""
-    if not session.container:
-        return  # solo consultas
+    if not session.container or not state["auto_check"]:
+        return  # solo consultas, o comprobación automática desactivada
     pending = sorted(f for f, st in state["check"].items() if st == "update")
     if pending:
         _spawn(run_check(pending))
@@ -219,7 +272,8 @@ async def lifespan(_app: FastAPI):
         state["self_container"] = name
         state["self_image"] = image or os.environ.get("HELPER_IMAGE", "")
         await _reattach_jobs()
-        if CHECK_ON_START:
+        state["auto_check"] = load_settings().get("auto_check", True) is not False
+        if CHECK_ON_START and state["auto_check"]:
             _spawn(run_check(source="start"))
         if CHECK_TIMES:
             _spawn(check_scheduler())
@@ -262,6 +316,9 @@ async def security(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "same-origin")
+    if request.url.path.startswith("/static/"):
+        # Revalidar siempre (304 si no ha cambiado): tras actualizar el panel no queda JS/CSS viejo
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 
@@ -328,7 +385,8 @@ async def services():
         "check_time": state["check_time"],
         "check_running": state["check_running"],
         "check_source": state["check_source"],
-        "check_next": state["check_next"],
+        "check_next": state["check_next"] if state["auto_check"] else None,
+        "auto_check": state["auto_check"],
     }
 
 
@@ -356,6 +414,33 @@ async def check(request: Request):
     elif not state["check_running"]:
         _spawn(run_check())
         await asyncio.sleep(0)  # deja arrancar la tarea: la respuesta ya sale con running=True
+    return _check_status()
+
+
+@app.put("/api/check/auto")
+async def set_auto_check(request: Request):
+    """Activa o desactiva las comprobaciones automáticas: ``{"enabled": true|false}``."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = None
+    if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+        raise HTTPException(400, "Se espera {\"enabled\": true|false}")
+    data = load_settings()
+    data["auto_check"] = body["enabled"]
+    await asyncio.to_thread(save_settings, data)
+    state["auto_check"] = body["enabled"]
+    return _check_status()
+
+
+@app.delete("/api/check")
+async def cancel_check():
+    """Cancela la comprobación en curso (y las que estuvieran encoladas detrás)."""
+    if state["check_running"]:
+        state["check_cancelled"] = True
+        state["check_queue"] = None
+        if state["check_proc"] is not None:
+            _kill_check(state["check_proc"])
     return _check_status()
 
 
@@ -479,6 +564,27 @@ async def readme():
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def render_index() -> str:
+    """index.html con ``?v=`` de cada fichero estático sustituido por el hash de su contenido:
+    cada versión nueva del panel obliga al navegador a descargar el JS/CSS nuevo."""
+    import hashlib
+    import re
+
+    def stamp(m: re.Match) -> str:
+        f = STATIC_DIR / m.group(1)
+        digest = hashlib.sha256(f.read_bytes()).hexdigest()[:10] if f.is_file() else "0"
+        return f"/static/{m.group(1)}?v={digest}"
+
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return re.sub(r"/static/([\w./-]+)\?v=[\w]*", stamp, html)
+
+
 @app.get("/")
 async def index():
-    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    if "index" not in _INDEX_CACHE:
+        _INDEX_CACHE["index"] = render_index()
+    return Response(_INDEX_CACHE["index"], media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "no-cache"})
+
+
+_INDEX_CACHE: dict[str, str] = {}

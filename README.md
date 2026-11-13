@@ -18,11 +18,12 @@ Panel web sencillo para gestionar los servicios de `docker/` con el **mismo `upd
 | | Logs en vivo | `-l <svc>` |
 | | Backup, política de reinicio, comando de arranque | `-k <svc>`, `--restart-policy <svc> <pol>`, `-s <svc>` |
 | | 🔍 Comprobar actualización solo de ese servicio (menú ⋯) | `--check-tsv <svc>` |
-| 🚀 Actualizaciones | Comprobar con barra de progreso (marca los servicios con imagen nueva). Al terminar cualquier tarea que modifica algo (web, menú o SSH) se recomprueban solos los que estaban pendientes | `--check-tsv [svc...]` (= `-c`) |
+| 🚀 Actualizaciones | **🔍 Comprobar** con barra de progreso (marca los servicios con imagen nueva). Mientras comprueba, el mismo botón pasa a **⏹ Cancelar** (también cancela las automáticas y las encoladas; lo que ya se había comprobado se conserva). Al terminar cualquier tarea que modifica algo (web, menú o SSH) se recomprueban solos los que estaban pendientes | `--check-tsv [svc...]` (= `-c`) |
 | | Actualizar disponibles | `u` tras `c` en el menú (cada uno con `-f` y `image prune` al final) |
 | | Actualizar todos (opción forzar) | `-a [-f]` |
-| ⏯️ Lote | Casillas por servicio (o clic en la fila), «Seleccionar todos» y casilla de cabecera (respeta el filtro). Iniciar, reiniciar, recrear, detener, comprobar actualizaciones, actualizar, backup, política y comando de arranque **sobre los seleccionados**; sin selección, sobre todos | por servicio: `update.sh --start <svc>`…; sin selección: `--start all`, `-a [-f]`, `-k all`… |
-| 🛠️ Herramientas | Recursos, nuevo servicio, restaurar, limpieza, ruta base, ayuda | `-m`, `-n [cmd]`, `-r`, `-b`, `--set-user-home`, `--help` |
+| ☑️ Selección | Casillas por servicio (o clic en la fila) y casilla de cabecera (respeta el filtro). Al marcar alguno aparece la barra de selección: iniciar, reiniciar, recrear, detener, comprobar actualizaciones, actualizar, backup, política y comando de arranque **sobre los seleccionados** | por servicio: `update.sh --start <svc>`, `--check-tsv <svc>`… |
+| ⏯️ Todos ▾ | Las mismas acciones sobre **todos** los servicios, y «Seleccionar todos (visibles)» | `--start all`, `-a [-f]`, `-k all`… |
+| 🛠️ Herramientas ▾ | Recursos, nuevo servicio, restaurar, limpieza, ruta base, **comprobación automática** (activar/desactivar) y ayuda | `-m`, `-n [cmd]`, `-r`, `-b`, `--set-user-home`, `--help` |
 | Cabecera | ⌨️ Menú interactivo | `./update.sh` sin argumentos (el menú completo) |
 
 La web avisa si el `update.sh` del servidor es más antiguo que el panel (le faltan opciones que usa, como el progreso de la comprobación): basta con actualizar el repositorio `docker`.
@@ -101,6 +102,8 @@ Abre `http://<servidor>:8092`.
 | `MAX_RUNNING_JOBS` | `6` | Tareas simultáneas máximas. |
 | `CHECK_TIMES` | `08:00` | Horas de la comprobación automática diaria de actualizaciones (`HH:MM`, varias separadas por comas; vacío u `off` la desactiva). Usa la zona horaria `TZ`. El resultado queda marcado en la web. |
 | `CHECK_ON_START` | `true` | Comprobar actualizaciones al arrancar el panel (tras reiniciarlo o actualizarlo no se queda sin datos). |
+
+**Desactivar la comprobación automática desde la web** (🛠️ Herramientas ▾ → ⏰ Comprobación automática): deja de comprobar al arrancar, a las horas de `CHECK_TIMES` y tras cada tarea; solo se comprueba a mano. Útil si el registro limita las peticiones (Docker Hub permite pocas consultas por hora sin cuenta). Se guarda en `docker/dockpanel/settings.json` (`{"auto_check": false}`), que el `.gitignore` del repo `docker` ya excluye, y sobrevive a reinicios y actualizaciones del panel.
 | `USER_HOME`, `BACKUP_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_KEEP_MIN`, `HEALTH_WAIT`, `HEALTH_TIMEOUT`, `HEALTH_POLL` | — | Si se definen en el panel, se pasan tal cual a `update.sh`. |
 
 `update.sh` toma la ruta base de usuario de `docker/.user_home` (opción **⚙️ Ruta base** o `--set-user-home`). Si no existe, usa `HOME`, que dentro del panel es `/root`: conviene fijarla una vez.

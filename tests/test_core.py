@@ -246,6 +246,78 @@ class CheckApiTests(unittest.TestCase):
         self.assertEqual(self.calls, [["immich-app"]])  # run_check lo encola
 
 
+class CancelAndAutoTests(unittest.TestCase):
+    def test_cancel_kills_running_check(self):
+        from app import main
+
+        script = 'printf "a\\tok\\n"; sleep 30; printf "b\\tupdate\\n"'
+        main.state.update(check={}, check_time=5.0, check_queue=None)
+
+        async def scenario():
+            with mock.patch.object(main.host, "on_host", return_value=["/bin/sh", "-c", script]):
+                task = asyncio.create_task(main.run_check(["a", "b"]))
+                for _ in range(100):
+                    await asyncio.sleep(0.05)
+                    if main.state["check_done"]:
+                        break
+                main.state["check_queue"] = "all"  # una encolada detrás también se descarta
+                await main.cancel_check()
+                await asyncio.wait_for(task, 5)
+
+        asyncio.run(scenario())
+        st = main._check_status()
+        self.assertFalse(st["running"])
+        self.assertTrue(st["cancelled"])
+        self.assertIsNone(st["error"])
+        self.assertEqual(st["check"], {"a": "ok"})  # lo que ya llegó se conserva
+        self.assertEqual(st["check_time"], 5.0)
+        self.assertIsNone(main.state["check_queue"])
+
+    def test_auto_toggle_persists_and_skips_recheck(self):
+        import tempfile
+
+        from fastapi.testclient import TestClient
+
+        from app import main
+
+        with tempfile.TemporaryDirectory() as root:
+            with mock.patch.object(main.host, "HOST_ROOT", root), \
+                    mock.patch.object(main.host, "DOCKER_DIR", "/srv/docker"):
+                client = TestClient(main.app)
+                res = client.put("/api/check/auto", json={"enabled": False}, headers={"X-Dockpanel": "1"})
+                self.assertEqual(res.status_code, 200)
+                self.assertFalse(res.json()["auto_check"])
+                self.assertIsNone(res.json()["check_next"])
+                self.assertEqual(main.load_settings(), {"auto_check": False})
+                bad = client.put("/api/check/auto", json={"enabled": "no"}, headers={"X-Dockpanel": "1"})
+                self.assertEqual(bad.status_code, 400)
+
+                calls = []
+
+                async def fake_check(services=None):
+                    calls.append(services)
+
+                async def scenario():
+                    main.state["check"] = {"a": "update"}
+                    with mock.patch.object(main, "run_check", fake_check):
+                        main._on_session_finished(mock.Mock(container="dockpanel-job-x"))
+                        await asyncio.sleep(0)
+
+                asyncio.run(scenario())
+                self.assertEqual(calls, [])
+                main.state["auto_check"] = True
+
+
+class IndexTests(unittest.TestCase):
+    def test_static_urls_get_content_hash(self):
+        from app import main
+
+        html = main.render_index()
+        self.assertRegex(html, r"/static/app\.js\?v=[0-9a-f]{10}")
+        self.assertRegex(html, r"/static/style\.css\?v=[0-9a-f]{10}")
+        self.assertNotIn("?v=10", html)
+
+
 class ScheduleTests(unittest.TestCase):
     def test_parse_check_times(self):
         from app.main import parse_check_times
