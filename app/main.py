@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import host
-from .actions import ActionError, build_plan, parse_check, parse_list
+from .actions import ActionError, build_plan, parse_check, parse_check_images, parse_list
 from .sessions import SessionManager
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -40,6 +40,7 @@ state: dict = {
     "self_container": "",
     "self_image": "",
     "check": {},  # carpeta → update|ok|error
+    "check_images": {},  # carpeta → imágenes con versión nueva (solo las que tienen actualización)
     "check_time": None,
     "check_running": False,
     "check_done": 0,  # progreso de la comprobación en curso
@@ -173,10 +174,18 @@ async def run_check(services: list[str] | None = None, source: str = "manual") -
         )
         state["check_proc"] = proc
         results: dict[str, str] = {}
+        images: dict[str, list[str]] = {}
 
         async def read_lines() -> None:
             async for raw in proc.stdout:
-                for folder, status in parse_check(raw.decode("utf-8", "replace")).items():
+                line = raw.decode("utf-8", "replace")
+                for folder, imgs in parse_check_images(line).items():
+                    images[folder] = imgs
+                for folder, status in parse_check(line).items():
+                    if status == "update":
+                        state["check_images"][folder] = images.get(folder, [])
+                    else:
+                        state["check_images"].pop(folder, None)
                     if folder not in results:
                         state["check_done"] += 1
                     results[folder] = status
@@ -195,6 +204,7 @@ async def run_check(services: list[str] | None = None, source: str = "manual") -
             state["check_error"] = stderr.strip()[-500:] or f"update.sh --check-tsv ha fallado ({rc})"
         if services is None and results and not state["check_cancelled"]:
             state["check"] = results  # olvida servicios que ya no existen
+            state["check_images"] = {f: images.get(f, []) for f, st in results.items() if st == "update"}
             state["check_time"] = time.time()
             state["check_source"] = source
     except Exception as exc:  # noqa: BLE001 - se muestra en la web
@@ -226,6 +236,7 @@ def _check_status() -> dict:
         "scope": state["check_scope"],
         "error": state["check_error"],
         "check": state["check"],
+        "check_images": state["check_images"],
         "check_time": state["check_time"],
         "check_source": state["check_source"],
         "check_next": state["check_next"] if state["auto_check"] else None,
@@ -379,6 +390,7 @@ async def services():
     items = await _list_services()
     for item in items:
         item["update"] = state["check"].get(item["folder"])
+        item["update_images"] = state["check_images"].get(item["folder"], [])
         item["is_self"] = bool(state["self_container"]) and item["container"] == state["self_container"]
     return {
         "services": items,

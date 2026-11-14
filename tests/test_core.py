@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("DOCKER_DIR", "/srv/docker")
 
 from app import host  # noqa: E402
-from app.actions import ActionError, build_plan, parse_check, parse_list  # noqa: E402
+from app.actions import ActionError, build_plan, parse_check, parse_check_images, parse_list  # noqa: E402
 from app.sessions import SessionManager  # noqa: E402
 
 NAMES = {"portainer": "Portainer", "it_tools": "IT Tools", "dockpanel": "Dockpanel"}
@@ -101,6 +101,12 @@ class ParseTests(unittest.TestCase):
 
     def test_parse_check(self):
         self.assertEqual(parse_check("a\tupdate\nb\tok\nc\tweird\n"), {"a": "update", "b": "ok"})
+
+    def test_parse_check_images(self):
+        tsv = "web\timages\tnginx:alpine,php:8.5-fpm-alpine\nweb\tupdate\nb\tok\nmal/o\timages\tx\n"
+        self.assertEqual(parse_check_images(tsv), {"web": ["nginx:alpine", "php:8.5-fpm-alpine"]})
+        # La línea de imágenes no es un estado: parse_check (y los paneles antiguos) la ignoran
+        self.assertEqual(parse_check(tsv), {"web": "update", "b": "ok"})
 
 
 class HostTests(unittest.TestCase):

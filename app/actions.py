@@ -159,6 +159,19 @@ def parse_list(tsv: str) -> list[dict]:
     return services
 
 
+def parse_check_images(tsv: str) -> dict[str, list[str]]:
+    """Imágenes con versión nueva por servicio: líneas ``carpeta<TAB>images<TAB>img1,img2``
+    de ``update.sh --check-tsv`` (las versiones antiguas de update.sh no las emiten)."""
+    result: dict[str, list[str]] = {}
+    for line in tsv.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[1] == "images" and SERVICE_RE.match(parts[0]):
+            imgs = [i.strip() for i in parts[2].split(",") if i.strip()]
+            if imgs:
+                result[parts[0]] = imgs
+    return result
+
+
 def parse_check(tsv: str) -> dict[str, str]:
     """Interpreta la salida de ``update.sh --check-tsv``."""
     result = {}

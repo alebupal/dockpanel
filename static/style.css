@@ -258,6 +258,7 @@ td.actions .btn { margin-left: 2px; }
 .chip-stop { background: var(--err-bg); color: var(--err-fg); }
 .chip-off { background: var(--neutral-bg); color: var(--neutral-fg); }
 .chip-upd { background: var(--warn-bg); color: var(--warn-fg); }
+.svc-upd-imgs { font-size: 11.5px; color: var(--warn-fg); overflow-wrap: anywhere; }
 .chip-err { background: var(--err-bg); color: var(--err-fg); }
 .chip-info { background: var(--info-bg); color: var(--info-fg); }
 
@@ -499,6 +500,10 @@ dialog textarea {
   .group { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 14px; }
   .group::-webkit-scrollbar { display: none; }
   .group .btn, .group .check { flex-shrink: 0; }
+  /* Barra de actualizaciones: sin carrusel (el check quedaba fuera, por la derecha) */
+  .group.group-upd { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
+  .group-upd .btn { flex: 1 1 auto; justify-content: center; }
+  .group-upd .check { flex-basis: 100%; min-height: 32px; }
   .group-title { width: auto; flex-shrink: 0; font-size: 11.5px; }
   .selbar { margin: 0; padding: 8px; }
   .bar-main { flex-direction: column; align-items: stretch; }

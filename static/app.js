@@ -140,7 +140,11 @@
 
     $("#svcBody").innerHTML = list.map((s) => {
       const badges = [];
-      if (s.update === "update") badges.push('<span class="chip chip-upd" title="Hay una imagen nueva">⬆ actualización</span>');
+      const updImgs = s.update === "update" ? (s.update_images || []) : [];
+      if (s.update === "update") {
+        const tip = updImgs.length ? `Imagen nueva: ${updImgs.join(", ")}` : "Hay una imagen nueva";
+        badges.push(`<span class="chip chip-upd" title="${esc(tip)}">⬆ actualización</span>`);
+      }
       if (s.update === "error") badges.push('<span class="chip chip-err" title="No se pudo comprobar">? comprobación</span>');
       if (s.is_self) badges.push('<span class="chip chip-info" title="Este panel">este panel</span>');
       const port = s.port
@@ -153,7 +157,8 @@
       return `<tr data-folder="${esc(s.folder)}"${sel ? ' class="selected"' : ""}>
         <td class="sel"><input type="checkbox" class="sel-chk" aria-label="Seleccionar ${esc(s.name)}"${sel ? " checked" : ""}></td>
         <td><span class="svc-name">${esc(s.name)}</span><span class="svc-badges">${badges.join("")}</span><br>
-            <span class="svc-folder" title="${esc(s.image)}">${esc(s.folder)}${s.image ? '<span class="svc-img"> · ' + esc(s.image) + "</span>" : ""}</span></td>
+            <span class="svc-folder" title="${esc(s.image)}">${esc(s.folder)}${s.image ? '<span class="svc-img"> · ' + esc(s.image) + "</span>" : ""}</span>
+            ${updImgs.length ? `<br><span class="svc-upd-imgs" title="${esc(updImgs.join(", "))}">⬆ ${updImgs.map((i) => esc(i.split("/").pop())).join(", ")}</span>` : ""}</td>
         <td><span class="muted">${esc(s.mode)}</span></td>
         <td>${port}</td>
         <td>${statusChip(s.status)}</td>
@@ -236,7 +241,10 @@
     state.checkSource = c.check_source;
     state.checkNext = c.check_next;
     state.autoCheck = c.auto_check !== false;
-    for (const s of state.services) s.update = c.check[s.folder] || null;
+    for (const s of state.services) {
+      s.update = c.check[s.folder] || null;
+      s.update_images = (c.check_images && c.check_images[s.folder]) || [];
+    }
     renderServices();
     renderCheckInfo();
   }
